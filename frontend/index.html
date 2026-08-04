@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Checagem de Termohigrômetros</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; }
+header { background: #1a237e; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+header h1 { font-size: 1.4rem; font-weight: 500; }
+header .status { font-size: 0.85rem; opacity: 0.85; }
+main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+.section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 1.5rem; overflow: hidden; }
+.section-header { padding: 1rem 1.5rem; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between; }
+.section-header h2 { font-size: 1.1rem; font-weight: 600; }
+.section-body { padding: 1.5rem; }
+.port-list { list-style: none; }
+.port-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.port-item:last-child { border-bottom: none; }
+.port-device { font-family: monospace; font-weight: 600; min-width: 140px; color: #1a237e; }
+.port-info { font-size: 0.85rem; color: #666; flex: 1; min-width: 200px; }
+.port-controls { display: flex; align-items: center; gap: 0.5rem; }
+select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; background: #fff; }
+.btn { padding: 0.4rem 1rem; border: none; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+.btn-primary { background: #1a237e; color: #fff; }
+.btn-primary:hover { background: #283593; }
+.btn-success { background: #2e7d32; color: #fff; }
+.btn-success:hover { background: #388e3c; }
+.btn-danger { background: #c62828; color: #fff; }
+.btn-danger:hover { background: #d32f2f; }
+.btn-outline { background: transparent; border: 1px solid #ccc; color: #555; }
+.btn-outline:hover { background: #f5f5f5; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.reading-card { background: #f8f9fa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 1rem; margin-top: 0.5rem; }
+.reading-card .label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
+.reading-card .value { font-size: 1.8rem; font-weight: 300; color: #1a237e; }
+.reading-card .unit { font-size: 0.9rem; color: #666; margin-left: 0.25rem; }
+.reading-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+.monitor-bar { display: flex; align-items: center; gap: 1rem; }
+.monitor-bar input[type="number"] { width: 70px; padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
+.error { color: #c62828; font-size: 0.85rem; }
+.empty-state { text-align: center; color: #999; padding: 2rem; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+.badge-ok { background: #e8f5e9; color: #2e7d32; }
+.badge-error { background: #ffebee; color: #c62828; }
+.badge-waiting { background: #fff3e0; color: #e65100; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a237e; border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.refresh-time { font-size: 0.8rem; color: #999; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Checagem de Termohigrômetros</h1>
+  <span class="status" id="monitorStatus">Monitoramento: Parado</span>
+</header>
+<main>
+  <div class="section">
+    <div class="section-header">
+      <h2>Portas Seriais Detectadas</h2>
+      <div style="display:flex;align-items:center;gap:1rem">
+        <label style="font-size:0.8rem"><input type="checkbox" id="chkAllPorts" onchange="refreshPorts()"> Todas</label>
+        <button class="btn btn-outline" onclick="refreshPorts()" id="btnRefresh">Atualizar</button>
+      </div>
+    </div>
+    <div class="section-body" id="portsSection">
+      <div class="empty-state">Carregando...</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Leituras</h2>
+      <div class="monitor-bar">
+        <label style="font-size:0.85rem">Intervalo (s):</label>
+        <input type="number" id="monitorInterval" value="5" min="1">
+        <button class="btn btn-success" onclick="startMonitor()" id="btnStart">Iniciar</button>
+        <button class="btn btn-danger" onclick="stopMonitor()" id="btnStop">Parar</button>
+      </div>
+    </div>
+    <div class="section-body" id="readingsSection">
+      <div class="empty-state">Configure um instrumento e faça uma leitura</div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = '/api';
+
+async function refreshPorts() {
+  const btn = document.getElementById('btnRefresh');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+
+  const showAll = document.getElementById('chkAllPorts')?.checked ? '1' : '0';
+
+  try {
+    const resp = await fetch(`${API}/ports?all=${showAll}`);
+    const ports = await resp.json();
+    renderPorts(ports);
+  } catch (e) {
+    document.getElementById('portsSection').innerHTML = `<div class="error">Erro ao buscar portas: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Atualizar';
+  }
+}
+
+async function assignInstrument(device, type) {
+  const select = document.querySelector(`select[data-device="${device}"]`);
+  const statusEl = document.getElementById(`status-${CSS.escape(device)}`);
+  if (statusEl) statusEl.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    await fetch(`${API}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, type })
+    });
+    if (statusEl) {
+      statusEl.innerHTML = type
+        ? '<span class="badge badge-waiting">Configurado</span>'
+        : '';
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span class="error">Erro: ${e.message}</span>`;
+  }
+}
+
+async function readInstrument(device) {
+  const btn = document.getElementById(`btn-read-${CSS.escape(device)}`);
+  const resultEl = document.getElementById(`reading-${CSS.escape(device)}`);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  if (resultEl) resultEl.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const resp = await fetch(`${API}/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device })
+    });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      renderReading(device, data);
+    } else {
+      if (resultEl) resultEl.innerHTML = `<div class="error">${data.error}</div>`;
+    }
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = `<div class="error">Erro: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ler';
+  }
+}
+
+function renderReading(device, data) {
+  const container = document.getElementById(`reading-${device}`);
+  if (!container) return;
+
+  let html = `<div class="reading-card">`;
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">`;
+  html += `<span class="badge badge-ok">${data.instrument_label || ''}</span>`;
+  html += `<span class="refresh-time">${data.timestamp || ''}</span>`;
+  html += `</div>`;
+
+  if (data.temperature !== undefined) {
+    html += `<div style="display:flex;align-items:baseline;gap:0.5rem">`;
+    html += `<div><span class="label">Temperatura</span><br><span class="value">${data.temperature}</span><span class="unit">${data.unit_temp || data.unit || '°C'}</span></div>`;
+    if (data.humidity !== undefined) {
+      html += `<div><span class="label">Umidade</span><br><span class="value">${data.humidity}</span><span class="unit">${data.unit_umid || '%'}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function renderPorts(ports) {
+  const section = document.getElementById('portsSection');
+  if (!ports.length) {
+    section.innerHTML = '<div class="empty-state">Nenhuma porta serial USB detectada</div>';
+    return;
+  }
+
+  let html = '<ul class="port-list">';
+  for (const p of ports) {
+    const escaped = CSS.escape(p.device);
+    const hasType = p.assigned_type && p.assigned_type !== '';
+
+    html += `<li class="port-item">`;
+    html += `<span class="port-device">${p.device}</span>`;
+    html += `<span class="port-info">${p.description || p.manufacturer || ''}</span>`;
+    html += `<div class="port-controls">`;
+
+    html += `<select data-device="${p.device}" onchange="assignInstrument('${p.device}', this.value)">`;
+    html += `<option value="">-- Selecionar --</option>`;
+    html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
+    html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
+    html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
+    html += `</select>`;
+
+    html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
+
+    html += `<span id="status-${escaped}">${hasType ? '<span class="badge badge-waiting">Configurado</span>' : ''}</span>`;
+    html += `</div>`;
+
+    html += `<div style="width:100%" id="reading-${escaped}"></div>`;
+    html += `</li>`;
+  }
+  html += '</ul>';
+  section.innerHTML = html;
+
+  for (const p of ports) {
+    if (p.last_reading && p.last_reading.status === 'ok') {
+      renderReading(p.device, p.last_reading);
+    }
+  }
+}
+
+let monitorPolling = null;
+
+async function updateMonitorStatus() {
+  try {
+    const resp = await fetch(`${API}/monitor/status`);
+    const data = await resp.json();
+    const statusEl = document.getElementById('monitorStatus');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+
+    if (data.running) {
+      statusEl.textContent = 'Monitoramento: Ativo';
+      statusEl.style.color = '#a5d6a7';
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      if (!monitorPolling) startPollingReadings();
+    } else {
+      statusEl.textContent = 'Monitoramento: Parado';
+      statusEl.style.color = '';
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+      if (monitorPolling) stopPollingReadings();
+    }
+  } catch (e) {}
+}
+
+async function startMonitor() {
+  const interval = document.getElementById('monitorInterval').value || 5;
+  try {
+    await fetch(`${API}/monitor/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval: parseInt(interval) })
+    });
+    updateMonitorStatus();
+  } catch (e) {
+    alert('Erro ao iniciar monitoramento: ' + e.message);
+  }
+}
+
+async function stopMonitor() {
+  try {
+    await fetch(`${API}/monitor/stop`, { method: 'POST' });
+    updateMonitorStatus();
+  } catch (e) {
+    alert('Erro ao parar monitoramento: ' + e.message);
+  }
+}
+
+function startPollingReadings() {
+  monitorPolling = setInterval(async () => {
+    try {
+      const resp = await fetch(`${API}/ports`);
+      const ports = await resp.json();
+      for (const p of ports) {
+        if (p.last_reading) {
+          const el = document.getElementById(`reading-${CSS.escape(p.device)}`);
+          if (el && p.last_reading.status === 'ok') {
+            renderReading(p.device, p.last_reading);
+          } else if (el && p.last_reading.status === 'error') {
+            el.innerHTML = `<div class="error">Erro: ${p.last_reading.error || 'desconhecido'}</div>`;
+          }
+        }
+      }
+    } catch (e) {}
+  }, 1000);
+}
+
+function stopPollingReadings() {
+  if (monitorPolling) {
+    clearInterval(monitorPolling);
+    monitorPolling = null;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  refreshPorts();
+  updateMonitorStatus();
+});
+</script>
+</body>
+</html>
