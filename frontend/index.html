@@ -115,8 +115,23 @@ input.cal-input-wide { width: 100%; max-width: 280px; }
         <button class="btn btn-danger" onclick="stopMonitor()" id="btnStop">Parar</button>
       </div>
     </div>
-    <div class="section-body" id="monitorSection">
-      <div class="empty-state">Configure os instrumentos e inicie o monitoramento</div>
+    <div class="section-body">
+      <div id="refBar" style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+        <span style="font-size:0.85rem;font-weight:600">Referencias:</span>
+        <label style="font-size:0.8rem">Temp:
+          <select id="refTemperatura" onchange="setReference('temperatura', this.value)" style="font-size:0.8rem">
+            <option value="">-- Nenhum --</option>
+          </select>
+        </label>
+        <label style="font-size:0.8rem">Umid:
+          <select id="refUmidade" onchange="setReference('umidade', this.value)" style="font-size:0.8rem">
+            <option value="">-- Nenhum --</option>
+          </select>
+        </label>
+      </div>
+      <div id="monitorSection">
+        <div class="empty-state">Configure os instrumentos e inicie o monitoramento</div>
+      </div>
     </div>
   </div>
 
@@ -635,6 +650,8 @@ function renderPorts(ports) {
   html += '</ul>';
   section.innerHTML = html;
 
+  updateRefSelectors(ports);
+
   for (const p of ports) {
     if (p.last_reading) {
       if (p.last_reading.status === 'ok') {
@@ -685,6 +702,8 @@ function renderMonitorTable(snapshots) {
   for (const lb of labels) {
     html += `<th>${lb}<br><span class="col-sub">T (&#176;C)</span></th>`;
     html += `<th>${lb}<br><span class="col-sub">U (%)</span></th>`;
+    html += `<th>${lb}<br><span class="col-sub">En T</span></th>`;
+    html += `<th>${lb}<br><span class="col-sub">En U</span></th>`;
   }
   html += `</tr></thead><tbody>`;
 
@@ -695,7 +714,11 @@ function renderMonitorTable(snapshots) {
       if (r) {
         html += `<td>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
         html += `<td>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+        const en = r.en || {};
+        html += renderEnCell(en.temperatura);
+        html += renderEnCell(en.umidade);
       } else {
+        html += `<td class="error-cell">-</td><td class="error-cell">-</td>`;
         html += `<td class="error-cell">-</td><td class="error-cell">-</td>`;
       }
     }
@@ -708,6 +731,54 @@ function renderMonitorTable(snapshots) {
 
 function exportCSV() {
   window.open(`${API}/snapshots/csv`, '_blank');
+}
+
+function renderEnCell(value) {
+  if (value === undefined || value === null || value === '') return '<td>-</td>';
+  const cls = value > 1.0 ? 'color:#c62828;font-weight:600' : 'color:#2e7d32;font-weight:600';
+  return `<td style="${cls}">${value}</td>`;
+}
+
+async function loadReferences() {
+  try {
+    const resp = await fetch(`${API}/references`);
+    const refs = await resp.json();
+    document.getElementById('refTemperatura').value = refs.temperatura || '';
+    document.getElementById('refUmidade').value = refs.umidade || '';
+  } catch (e) {}
+}
+
+async function setReference(tipo, label) {
+  addDebug(`POST /api/references ${tipo}=${label || '(nenhum)'}`);
+  try {
+    await fetch(`${API}/references`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [tipo]: label })
+    });
+  } catch (e) {
+    addDebug(`ref ERRO: ${e.message}`, 'err');
+  }
+}
+
+function updateRefSelectors(ports) {
+  const labels = [];
+  for (const p of ports) {
+    if (p.assigned_label) labels.push(p.assigned_label);
+  }
+
+  const selTemp = document.getElementById('refTemperatura');
+  const selUmid = document.getElementById('refUmidade');
+  const currentTemp = selTemp.value;
+  const currentUmid = selUmid.value;
+
+  const options = '<option value="">-- Nenhum --</option>' +
+    labels.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
+
+  selTemp.innerHTML = options;
+  selUmid.innerHTML = options;
+  selTemp.value = currentTemp;
+  selUmid.value = currentUmid;
 }
 
 let monitorPolling = null;
@@ -829,6 +900,7 @@ function stopTablePolling() {
 
 document.addEventListener('DOMContentLoaded', () => {
   refreshPorts();
+  loadReferences();
   updateMonitorStatus();
 });
 </script>

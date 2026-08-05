@@ -125,3 +125,21 @@ def list_calibracoes() -> list[dict]:
     ).fetchall()
     conn.close()
     return [{"label": r["label"], "certificado": r["certificado"], "data_calibracao": r["data_calibracao"]} for r in rows]
+
+
+def get_incerteza_u(label: str, tipo: str) -> float | None:
+    conn = _get_conn()
+    row = conn.execute("SELECT id FROM calibracoes WHERE label = ?", (label,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    ponto = conn.execute(
+        "SELECT incerteza_u FROM pontos_calibracao WHERE calibracao_id = ? AND tipo = ? ORDER BY id LIMIT 1",
+        (row["id"], tipo),
+    ).fetchone()
+    conn.close()
+
+    if ponto and ponto["incerteza_u"]:
+        return float(ponto["incerteza_u"].replace(",", "."))
+    return None

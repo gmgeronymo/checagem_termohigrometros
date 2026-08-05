@@ -1,3 +1,4 @@
+import math
 import csv
 import io
 import json
@@ -9,7 +10,7 @@ from datetime import datetime
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes
+from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes, get_incerteza_u
 from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes
 from backend.serial_utils import find_usb_serial_ports
 
@@ -21,6 +22,7 @@ init_db()
 assignments: dict[str, dict] = {}
 readings: dict[str, dict] = {}
 snapshots: list[dict] = []
+references: dict[str, str] = {"temperatura": "", "umidade": ""}
 lock = threading.Lock()
 monitoring = False
 monitor_thread = None
@@ -212,7 +214,25 @@ def api_config():
                 "label": label,
                 "instrument_label": INSTRUMENT_TYPES.get(instr_type, {}).get("label", instr_type),
             })
-    return jsonify(config)
+        refs = dict(references)
+    return jsonify({"instruments": config, "references": refs})
+
+
+@app.route("/api/references", methods=["GET"])
+def api_references():
+    with lock:
+        return jsonify(dict(references))
+
+
+@app.route("/api/references", methods=["POST"])
+def api_set_references():
+    data = request.get_json()
+    with lock:
+        if "temperatura" in data:
+            references["temperatura"] = data["temperatura"]
+        if "umidade" in data:
+            references["umidade"] = data["umidade"]
+    return jsonify({"status": "ok", "references": dict(references)})
 
 
 @app.route("/api/snapshots", methods=["GET"])
@@ -238,6 +258,8 @@ def api_snapshots_csv():
     for lb in labels:
         header.append(f"{lb}_T (°C)")
         header.append(f"{lb}_U (%)")
+        header.append(f"{lb}_En_T")
+        header.append(f"{lb}_En_U")
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -249,6 +271,9 @@ def api_snapshots_csv():
             r = s["readings"].get(lb, {})
             row.append(r.get("temperature", ""))
             row.append(r.get("humidity", ""))
+            en = r.get("en", {})
+            row.append(en.get("temperatura", ""))
+            row.append(en.get("umidade", ""))
         writer.writerow(row)
 
     csv_content = output.getvalue()
@@ -317,12 +342,48 @@ def _monitor_loop(interval: float):
                     }
 
         if snapshot["readings"]:
+            _compute_errors_normalizados(snapshot)
+
             with lock:
                 snapshots.append(snapshot)
                 if len(snapshots) > 1000:
                     snapshots[:] = snapshots[-1000:]
 
         time.sleep(interval)
+
+
+def _compute_errors_normalizados(snapshot: dict):
+    with lock:
+        ref_temp = references.get("temperatura", "")
+        ref_umid = references.get("umidade", "")
+
+    for label, reading in snapshot["readings"].items():
+        en = {}
+
+        if ref_temp and label != ref_temp and "temperature" in reading and reading["temperature"]:
+            ref_reading = snapshot["readings"].get(ref_temp, {})
+            ref_val = ref_reading.get("temperature")
+            if ref_val and ref_val != "":
+                u_instr = get_incerteza_u(label, "temperatura")
+                u_ref = get_incerteza_u(ref_temp, "temperatura")
+                if u_instr is not None and u_ref is not None:
+                    diff = abs(float(reading["temperature"]) - float(ref_val))
+                    denom = math.sqrt(u_instr**2 + u_ref**2)
+                    en["temperatura"] = round(diff / denom, 2) if denom > 0 else None
+
+        if ref_umid and label != ref_umid and "humidity" in reading and reading["humidity"]:
+            ref_reading = snapshot["readings"].get(ref_umid, {})
+            ref_val = ref_reading.get("humidity")
+            if ref_val and ref_val != "":
+                u_instr = get_incerteza_u(label, "umidade")
+                u_ref = get_incerteza_u(ref_umid, "umidade")
+                if u_instr is not None and u_ref is not None:
+                    diff = abs(float(reading["humidity"]) - float(ref_val))
+                    denom = math.sqrt(u_instr**2 + u_ref**2)
+                    en["umidade"] = round(diff / denom, 2) if denom > 0 else None
+
+        if en:
+            reading["en"] = en
 
 
 @app.route("/api/monitor/start", methods=["POST"])
