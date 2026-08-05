@@ -427,7 +427,7 @@ def _compute_errors_normalizados(snapshot: dict):
 def api_monitor_start():
     global monitoring, monitor_thread
     data = request.get_json() or {}
-    interval = float(data.get("interval", 10))
+    interval = float(data.get("interval", 20))
     n_readings = int(data.get("n_readings", 10))
 
     if monitoring:
