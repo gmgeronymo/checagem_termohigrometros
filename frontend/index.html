@@ -10,19 +10,21 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
 header { background: #1a237e; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
 header h1 { font-size: 1.4rem; font-weight: 500; }
 header .status { font-size: 0.85rem; opacity: 0.85; }
-main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
 .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 1.5rem; overflow: hidden; }
-.section-header { padding: 1rem 1.5rem; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between; }
+.section-header { padding: 1rem 1.5rem; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 .section-header h2 { font-size: 1.1rem; font-weight: 600; }
 .section-body { padding: 1.5rem; }
 .port-list { list-style: none; }
-.port-item { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.port-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
 .port-item:last-child { border-bottom: none; }
 .port-device { font-family: monospace; font-weight: 600; min-width: 140px; color: #1a237e; }
-.port-info { font-size: 0.85rem; color: #666; flex: 1; min-width: 200px; }
-.port-controls { display: flex; align-items: center; gap: 0.5rem; }
-select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; background: #fff; }
-.btn { padding: 0.4rem 1rem; border: none; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+.port-info { font-size: 0.85rem; color: #666; flex: 1; min-width: 150px; }
+.port-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+select, input[type="text"] { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; background: #fff; }
+input[type="text"] { width: 100px; }
+.label-input::placeholder { color: #bbb; font-style: italic; }
+.btn { padding: 0.4rem 1rem; border: none; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500; transition: background 0.2s; white-space: nowrap; }
 .btn-primary { background: #1a237e; color: #fff; }
 .btn-primary:hover { background: #283593; }
 .btn-success { background: #2e7d32; color: #fff; }
@@ -36,8 +38,7 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
 .reading-card .label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
 .reading-card .value { font-size: 1.8rem; font-weight: 300; color: #1a237e; }
 .reading-card .unit { font-size: 0.9rem; color: #666; margin-left: 0.25rem; }
-.reading-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
-.monitor-bar { display: flex; align-items: center; gap: 1rem; }
+.monitor-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .monitor-bar input[type="number"] { width: 70px; padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
 .error { color: #c62828; font-size: 0.85rem; }
 .empty-state { text-align: center; color: #999; padding: 2rem; }
@@ -54,6 +55,15 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
 .debug-log .err { color: #f44747; }
 .debug-log .info { color: #569cd6; }
 .traceback-box { background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 0.75rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+.table-wrapper { overflow-x: auto; }
+.snapshot-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.snapshot-table th { background: #1a237e; color: #fff; padding: 0.5rem 0.75rem; text-align: center; white-space: nowrap; font-weight: 500; }
+.snapshot-table td { padding: 0.4rem 0.75rem; text-align: center; border-bottom: 1px solid #eee; white-space: nowrap; }
+.snapshot-table .ts-col { font-family: monospace; font-size: 0.8rem; color: #555; }
+.snapshot-table .error-cell { color: #c62828; font-style: italic; font-size: 0.8rem; }
+.snapshot-table tr:hover td { background: #f5f5f5; }
+.export-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.col-sub { font-weight: 400; opacity: 0.75; font-size: 0.7rem; }
 </style>
 </head>
 <body>
@@ -77,7 +87,7 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
 
   <div class="section">
     <div class="section-header">
-      <h2>Leituras</h2>
+      <h2>Monitoramento</h2>
       <div class="monitor-bar">
         <label style="font-size:0.85rem">Intervalo (s):</label>
         <input type="number" id="monitorInterval" value="5" min="1">
@@ -85,8 +95,17 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
         <button class="btn btn-danger" onclick="stopMonitor()" id="btnStop">Parar</button>
       </div>
     </div>
+    <div class="section-body" id="monitorSection">
+      <div class="empty-state">Configure os instrumentos e inicie o monitoramento</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Leituras Individuais</h2>
+    </div>
     <div class="section-body" id="readingsSection">
-      <div class="empty-state">Configure um instrumento e faça uma leitura</div>
+      <div class="empty-state">Use o botao "Ler" nos instrumentos configurados</div>
     </div>
   </div>
 
@@ -148,17 +167,20 @@ async function refreshPorts() {
 }
 
 async function assignInstrument(device, type) {
-  const statusEl = document.getElementById(`status-${CSS.escape(device)}`);
-  const btnRead = document.getElementById(`btn-read-${CSS.escape(device)}`);
+  const escaped = CSS.escape(device);
+  const statusEl = document.getElementById(`status-${escaped}`);
+  const btnRead = document.getElementById(`btn-read-${escaped}`);
+  const labelInput = document.getElementById(`label-${escaped}`);
+  const label = labelInput ? labelInput.value.trim() : '';
   if (statusEl) statusEl.innerHTML = '<span class="spinner"></span>';
 
-  addDebug(`POST /api/assign device=${device} type=${type || '(vazio)'}`);
+  addDebug(`POST /api/assign device=${device} type=${type || '(vazio)'} label=${label}`);
 
   try {
     await fetch(`${API}/assign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device, type })
+      body: JSON.stringify({ device, type, label })
     });
 
     if (statusEl) {
@@ -169,16 +191,36 @@ async function assignInstrument(device, type) {
     if (btnRead) {
       btnRead.disabled = !type;
     }
-    addDebug(`assign OK para ${device} -> ${type || 'desvinculado'}`, 'ok');
+    addDebug(`assign OK para ${device}`, 'ok');
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<span class="error">Erro: ${e.message}</span>`;
     addDebug(`assign ERRO: ${e.message}`, 'err');
   }
 }
 
+async function updateLabel(device) {
+  const escaped = CSS.escape(device);
+  const labelInput = document.getElementById(`label-${escaped}`);
+  const label = labelInput ? labelInput.value.trim() : '';
+
+  addDebug(`POST /api/label device=${device} label=${label}`);
+
+  try {
+    await fetch(`${API}/label`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, label })
+    });
+    addDebug(`label atualizado`, 'ok');
+  } catch (e) {
+    addDebug(`label ERRO: ${e.message}`, 'err');
+  }
+}
+
 async function readInstrument(device) {
-  const btn = document.getElementById(`btn-read-${CSS.escape(device)}`);
-  const resultEl = document.getElementById(`reading-${CSS.escape(device)}`);
+  const escaped = CSS.escape(device);
+  const btn = document.getElementById(`btn-read-${escaped}`);
+  const resultEl = document.getElementById(`reading-${escaped}`);
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
   if (resultEl) resultEl.innerHTML = '<span class="spinner"></span>';
@@ -194,7 +236,7 @@ async function readInstrument(device) {
     const data = await resp.json();
 
     if (data.status === 'ok') {
-      addDebug(`leitura OK: ${JSON.stringify(data)}`, 'ok');
+      addDebug(`leitura OK`, 'ok');
       renderReading(device, data);
     } else {
       const errMsg = `${data.error || 'erro desconhecido'}`;
@@ -232,7 +274,7 @@ async function debugSerial(device, type) {
     const data = await resp.json();
 
     if (data.status === 'ok') {
-      addDebug(`debug OK: ${JSON.stringify(data.debug)}`, 'ok');
+      addDebug(`debug OK`, 'ok');
       renderDebugResult(device, data);
     } else {
       const errMsg = `${data.error || 'erro desconhecido'}`;
@@ -253,7 +295,7 @@ async function debugSerial(device, type) {
 }
 
 function renderDebugResult(device, data) {
-  const container = document.getElementById(`reading-${device}`);
+  const container = document.getElementById(`reading-${CSS.escape(device)}`);
   if (!container) return;
 
   let html = `<div class="reading-card">`;
@@ -277,6 +319,7 @@ function renderReading(device, data) {
   let html = `<div class="reading-card">`;
   html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">`;
   html += `<span class="badge badge-ok">${data.instrument_label || ''}</span>`;
+  if (data.label) html += ` <span style="font-weight:600;color:#1a237e">${data.label}</span>`;
   html += `<span class="refresh-time">${data.timestamp || ''}</span>`;
   html += `</div>`;
 
@@ -317,6 +360,8 @@ function renderPorts(ports) {
     html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
     html += `</select>`;
 
+    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')" ${!hasType ? 'disabled' : ''}>`;
+
     html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
 
     if (hasType) {
@@ -351,7 +396,63 @@ function renderPorts(ports) {
   }
 }
 
+function renderMonitorTable(snapshots) {
+  const section = document.getElementById('monitorSection');
+  if (!snapshots.length) {
+    section.innerHTML = '<div class="empty-state">Aguardando leituras...</div>';
+    return;
+  }
+
+  const allLabels = new Set();
+  for (const s of snapshots) {
+    for (const lb of Object.keys(s.readings)) {
+      allLabels.add(lb);
+    }
+  }
+  const labels = [...allLabels].sort();
+
+  let html = '';
+
+  html += `<div class="export-bar">`;
+  html += `<button class="btn btn-outline" onclick="exportCSV()">Exportar CSV</button>`;
+  html += `<span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} registros</span>`;
+  html += `</div>`;
+
+  html += `<div class="table-wrapper"><table class="snapshot-table">`;
+  html += `<thead><tr>`;
+  html += `<th>Timestamp</th>`;
+  for (const lb of labels) {
+    html += `<th>${lb}<br><span class="col-sub">T (°C)</span></th>`;
+    html += `<th>${lb}<br><span class="col-sub">U (%)</span></th>`;
+  }
+  html += `</tr></thead><tbody>`;
+
+  for (const s of snapshots.slice().reverse()) {
+    html += `<tr>`;
+    html += `<td class="ts-col">${s.timestamp}</td>`;
+    for (const lb of labels) {
+      const r = s.readings[lb];
+      if (r) {
+        html += `<td>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
+        html += `<td>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+      } else {
+        html += `<td class="error-cell">-</td>`;
+        html += `<td class="error-cell">-</td>`;
+      }
+    }
+    html += `</tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+  section.innerHTML = html;
+}
+
+function exportCSV() {
+  window.open(`${API}/snapshots/csv`, '_blank');
+}
+
 let monitorPolling = null;
+let tablePolling = null;
 
 async function updateMonitorStatus() {
   try {
@@ -367,12 +468,14 @@ async function updateMonitorStatus() {
       btnStart.disabled = true;
       btnStop.disabled = false;
       if (!monitorPolling) startPollingReadings();
+      if (!tablePolling) startTablePolling();
     } else {
       statusEl.textContent = 'Monitoramento: Parado';
       statusEl.style.color = '';
       btnStart.disabled = false;
       btnStop.disabled = true;
       if (monitorPolling) stopPollingReadings();
+      if (tablePolling) stopTablePolling();
     }
   } catch (e) {}
 }
@@ -380,6 +483,16 @@ async function updateMonitorStatus() {
 async function startMonitor() {
   const interval = document.getElementById('monitorInterval').value || 5;
   addDebug(`POST /api/monitor/start interval=${interval}`);
+
+  const activeDevices = [...document.querySelectorAll('select[data-device]')]
+    .filter(s => s.value)
+    .map(s => s.dataset.device);
+
+  if (!activeDevices.length) {
+    alert('Configure pelo menos um instrumento antes de iniciar.');
+    return;
+  }
+
   try {
     await fetch(`${API}/monitor/start`, {
       method: 'POST',
@@ -435,6 +548,23 @@ function stopPollingReadings() {
   if (monitorPolling) {
     clearInterval(monitorPolling);
     monitorPolling = null;
+  }
+}
+
+function startTablePolling() {
+  tablePolling = setInterval(async () => {
+    try {
+      const resp = await fetch(`${API}/snapshots`);
+      const snaps = await resp.json();
+      renderMonitorTable(snaps);
+    } catch (e) {}
+  }, 1500);
+}
+
+function stopTablePolling() {
+  if (tablePolling) {
+    clearInterval(tablePolling);
+    tablePolling = null;
   }
 }
 
