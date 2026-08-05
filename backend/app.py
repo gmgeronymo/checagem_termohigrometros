@@ -43,6 +43,7 @@ def api_ports():
         instr_type = cfg.get("type", "")
         port["assigned_type"] = instr_type
         port["assigned_label"] = cfg.get("label", "")
+        port["modo_correcao"] = cfg.get("modo_correcao", "linear")
         port["instrument_label"] = (
             INSTRUMENT_TYPES[instr_type]["label"]
             if instr_type in INSTRUMENT_TYPES
@@ -70,7 +71,9 @@ def api_assign():
             assignments.pop(device, None)
             readings.pop(device, None)
         else:
-            assignments[device] = {"type": instr_type, "label": label}
+            existing = assignments.get(device, {})
+            modo = data.get("modo", existing.get("modo_correcao", "linear"))
+            assignments[device] = {"type": instr_type, "label": label, "modo_correcao": modo}
 
     return jsonify({"status": "ok", "device": device, "type": instr_type, "label": label})
 
@@ -92,6 +95,26 @@ def api_label():
     return jsonify({"error": "dispositivo nao configurado"}), 400
 
 
+@app.route("/api/modo_correcao", methods=["POST"])
+def api_modo_correcao():
+    data = request.get_json()
+    device = data.get("device")
+    modo = data.get("modo", "linear")
+
+    if not device:
+        return jsonify({"error": "device e obrigatorio"}), 400
+
+    if modo not in ("linear", "ponto_fixo"):
+        return jsonify({"error": "modo invalido"}), 400
+
+    with lock:
+        if device in assignments:
+            assignments[device]["modo_correcao"] = modo
+            return jsonify({"status": "ok", "device": device, "modo_correcao": modo})
+
+    return jsonify({"error": "dispositivo nao configurado"}), 400
+
+
 @app.route("/api/read", methods=["POST"])
 def api_read():
     data = request.get_json()
@@ -105,6 +128,7 @@ def api_read():
 
     instr_type = cfg.get("type", "")
     label = cfg.get("label", "")
+    modo = cfg.get("modo_correcao", "linear")
     if not instr_type:
         return jsonify({"error": "dispositivo nao configurado"}), 400
 
@@ -133,7 +157,7 @@ def api_read():
     if label:
         calibracao = get_calibracao(label)
 
-    correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao)
+    correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
     result.update(correcoes)
 
     if calibracao:
@@ -298,6 +322,7 @@ def _monitor_loop(interval: float):
         for device, cfg in items:
             instr_type = cfg.get("type", "")
             label = cfg.get("label", device)
+            modo = cfg.get("modo_correcao", "linear")
             try:
                 instrument = get_instrument(instr_type)
                 result = instrument.read(device)
@@ -305,7 +330,7 @@ def _monitor_loop(interval: float):
                 raw_temp = result.get("temperature")
                 raw_umid = result.get("humidity")
                 calibracao = get_calibracao(label) if label else None
-                correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao)
+                correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
                 result.update(correcoes)
 
                 if calibracao:

@@ -251,8 +251,27 @@ def _decimal_places(value: str) -> int:
     return 0
 
 
+def _correcao_ponto_fixo(pontos: list[dict], valor_referencia: float) -> dict | None:
+    if not pontos:
+        return None
+    best = None
+    best_dist = float("inf")
+    for p in pontos:
+        ind = parse_decimal(p["indicacao"])
+        dist = abs(ind - valor_referencia)
+        if dist < best_dist:
+            best_dist = dist
+            best = p
+    if best is None:
+        return None
+    return {
+        "indicacao": best["indicacao"],
+        "correcao": float(parse_decimal(best["correcao"])),
+    }
+
+
 def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
-                       calibracao: dict | None) -> dict:
+                       calibracao: dict | None, modo: str = "linear") -> dict:
     result = {}
     if raw_temperature is not None and raw_temperature != "":
         raw_t = float(raw_temperature)
@@ -261,14 +280,22 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
         result["temperature"] = raw_temperature
         result["temperature_corrected"] = None
         if calibracao and calibracao.get("temperatura"):
-            coeff = _least_squares(calibracao["temperatura"])
-            if coeff:
-                a, b = coeff
-                corrected = a * raw_t + b
-                result["temperature"] = f"{corrected:.{ndigits}f}"
-                result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
-                result["temperature_coeff_a"] = round(a, 6)
-                result["temperature_coeff_b"] = round(b, 6)
+            if modo == "ponto_fixo":
+                pf = _correcao_ponto_fixo(calibracao["temperatura"], 23.0)
+                if pf:
+                    corrected = raw_t + pf["correcao"]
+                    result["temperature"] = f"{corrected:.{ndigits}f}"
+                    result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
+                    result["temperature_ponto_fixo"] = pf["indicacao"]
+            else:
+                coeff = _least_squares(calibracao["temperatura"])
+                if coeff:
+                    a, b = coeff
+                    corrected = a * raw_t + b
+                    result["temperature"] = f"{corrected:.{ndigits}f}"
+                    result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
+                    result["temperature_coeff_a"] = round(a, 6)
+                    result["temperature_coeff_b"] = round(b, 6)
 
     if raw_humidity is not None and raw_humidity != "":
         raw_u = float(raw_humidity)
@@ -277,13 +304,21 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
         result["humidity"] = raw_humidity
         result["humidity_corrected"] = None
         if calibracao and calibracao.get("umidade"):
-            coeff = _least_squares(calibracao["umidade"])
-            if coeff:
-                a, b = coeff
-                corrected = a * raw_u + b
-                result["humidity"] = f"{corrected:.{ndigits}f}"
-                result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
-                result["humidity_coeff_a"] = round(a, 6)
-                result["humidity_coeff_b"] = round(b, 6)
+            if modo == "ponto_fixo":
+                pf = _correcao_ponto_fixo(calibracao["umidade"], 50.0)
+                if pf:
+                    corrected = raw_u + pf["correcao"]
+                    result["humidity"] = f"{corrected:.{ndigits}f}"
+                    result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
+                    result["humidity_ponto_fixo"] = pf["indicacao"]
+            else:
+                coeff = _least_squares(calibracao["umidade"])
+                if coeff:
+                    a, b = coeff
+                    corrected = a * raw_u + b
+                    result["humidity"] = f"{corrected:.{ndigits}f}"
+                    result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
+                    result["humidity_coeff_a"] = round(a, 6)
+                    result["humidity_coeff_b"] = round(b, 6)
 
     return result
