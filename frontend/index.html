@@ -224,7 +224,13 @@ function brToIso(dateStr) {
   return dateStr;
 }
 
-async function openCalModal(device, label, instrType) {
+async function openCalModal(device) {
+  const escaped = CSS.escape(device);
+  const labelInput = document.getElementById(`label-${escaped}`);
+  const selectEl = document.querySelector(`select[data-device="${device}"]`);
+  const label = labelInput ? labelInput.value.trim() : '';
+  const instrType = selectEl ? selectEl.value : '';
+
   document.getElementById('calDevice').value = device;
   document.getElementById('calLabel').value = label;
 
@@ -606,7 +612,7 @@ function renderPorts(ports) {
     if (hasType) {
       html += `<button class="btn btn-outline" onclick="debugSerial('${p.device}','${p.assigned_type}')" style="font-size:0.75rem">Debug</button>`;
     }
-    html += `<button class="btn btn-cal" id="btn-cal-${escaped}" onclick="openCalModal('${p.device}','${p.assigned_label || ''}','${p.assigned_type || ''}')" ${!hasType ? 'style="display:none"' : ''}>Calibracao</button>`;
+    html += `<button class="btn btn-cal" id="btn-cal-${escaped}" onclick="openCalModal('${p.device}')" ${!hasType ? 'style="display:none"' : ''}>Calibracao</button>`;
 
     html += `<span id="status-${escaped}">${hasType ? '<span class="badge badge-waiting">Configurado</span>' : ''}</span>`;
     html += `</div>`;
