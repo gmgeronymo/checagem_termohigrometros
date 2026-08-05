@@ -10,7 +10,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes
-from backend.instruments import INSTRUMENT_TYPES, get_instrument
+from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes
 from backend.serial_utils import find_usb_serial_ports
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
@@ -102,6 +102,7 @@ def api_read():
         cfg = assignments.get(device, {})
 
     instr_type = cfg.get("type", "")
+    label = cfg.get("label", "")
     if not instr_type:
         return jsonify({"error": "dispositivo nao configurado"}), 400
 
@@ -123,10 +124,28 @@ def api_read():
             readings[device] = error_result
         return jsonify(error_result), 500
 
+    raw_temp = result.get("temperature")
+    raw_umid = result.get("humidity")
+
+    calibracao = None
+    if label:
+        calibracao = get_calibracao(label)
+
+    correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao)
+    result.update(correcoes)
+
+    if calibracao:
+        result["certificado"] = calibracao.get("certificado", "")
+        result["data_calibracao"] = calibracao.get("data_calibracao", "")
+        result["has_calibracao"] = True
+    else:
+        result["has_calibracao"] = False
+
     result["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     result["device"] = device
     result["instrument_type"] = instr_type
     result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
+    result["label"] = label
     result["status"] = "ok"
 
     with lock:
@@ -257,6 +276,20 @@ def _monitor_loop(interval: float):
             try:
                 instrument = get_instrument(instr_type)
                 result = instrument.read(device)
+
+                raw_temp = result.get("temperature")
+                raw_umid = result.get("humidity")
+                calibracao = get_calibracao(label) if label else None
+                correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao)
+                result.update(correcoes)
+
+                if calibracao:
+                    result["certificado"] = calibracao.get("certificado", "")
+                    result["data_calibracao"] = calibracao.get("data_calibracao", "")
+                    result["has_calibracao"] = True
+                else:
+                    result["has_calibracao"] = False
+
                 result["timestamp"] = ts
                 result["device"] = device
                 result["instrument_type"] = instr_type

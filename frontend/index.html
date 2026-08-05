@@ -530,14 +530,43 @@ function renderReading(device, data) {
   html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">`;
   html += `<span class="badge badge-ok">${data.instrument_label || ''}</span>`;
   if (data.label) html += ` <span style="font-weight:600;color:#1a237e">${data.label}</span>`;
+  if (data.has_calibracao && data.certificado) {
+    html += ` <span style="font-size:0.7rem;color:#2e7d32;margin-left:0.5rem">${data.certificado}</span>`;
+  }
   html += `<span class="refresh-time">${data.timestamp || ''}</span>`;
   html += `</div>`;
 
   if (data.temperature !== undefined) {
-    html += `<div style="display:flex;align-items:baseline;gap:0.5rem">`;
-    html += `<div><span class="label">Temperatura</span><br><span class="value">${data.temperature}</span><span class="unit">${data.unit_temp || data.unit || '\u00B0C'}</span></div>`;
+    html += `<div style="display:flex;align-items:baseline;gap:1.5rem;flex-wrap:wrap">`;
+
+    const tempRaw = data.temperature_raw || data.temperature;
+    const tempCorr = data.temperature_corrected;
+    const unitTemp = data.unit_temp || data.unit || '\u00B0C';
+
+    html += `<div>`;
+    html += `<span class="label">Temperatura</span><br>`;
+    if (tempCorr) {
+      html += `<span class="value" style="font-size:1.8rem">${data.temperature}</span><span class="unit">${unitTemp}</span>`;
+      html += `<br><span style="font-size:0.7rem;color:#888">Bruta: ${tempRaw} ${unitTemp}</span>`;
+    } else {
+      html += `<span class="value">${data.temperature}</span><span class="unit">${unitTemp}</span>`;
+    }
+    html += `</div>`;
+
     if (data.humidity !== undefined) {
-      html += `<div><span class="label">Umidade</span><br><span class="value">${data.humidity}</span><span class="unit">${data.unit_umid || '%'}</span></div>`;
+      const umidRaw = data.humidity_raw || data.humidity;
+      const umidCorr = data.humidity_corrected;
+      const unitUmid = data.unit_umid || '%';
+
+      html += `<div>`;
+      html += `<span class="label">Umidade</span><br>`;
+      if (umidCorr) {
+        html += `<span class="value" style="font-size:1.8rem">${data.humidity}</span><span class="unit">${unitUmid}</span>`;
+        html += `<br><span style="font-size:0.7rem;color:#888">Bruta: ${umidRaw} ${unitUmid}</span>`;
+      } else {
+        html += `<span class="value">${data.humidity}</span><span class="unit">${unitUmid}</span>`;
+      }
+      html += `</div>`;
     }
     html += `</div>`;
   }
@@ -576,8 +605,8 @@ function renderPorts(ports) {
 
     if (hasType) {
       html += `<button class="btn btn-outline" onclick="debugSerial('${p.device}','${p.assigned_type}')" style="font-size:0.75rem">Debug</button>`;
-      html += `<button class="btn btn-cal" id="btn-cal-${escaped}" onclick="openCalModal('${p.device}','${p.assigned_label || ''}','${p.assigned_type}')">Calibracao</button>`;
     }
+    html += `<button class="btn btn-cal" id="btn-cal-${escaped}" onclick="openCalModal('${p.device}','${p.assigned_label || ''}','${p.assigned_type || ''}')" ${!hasType ? 'style="display:none"' : ''}>Calibracao</button>`;
 
     html += `<span id="status-${escaped}">${hasType ? '<span class="badge badge-waiting">Configurado</span>' : ''}</span>`;
     html += `</div>`;

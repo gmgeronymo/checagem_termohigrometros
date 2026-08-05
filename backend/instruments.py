@@ -218,3 +218,62 @@ def get_instrument(instrument_type: str) -> Instrument:
     if instrument_type not in INSTRUMENT_TYPES:
         raise ValueError(f"Tipo de instrumento desconhecido: {instrument_type}")
     return INSTRUMENT_TYPES[instrument_type]["class"]()
+
+
+def parse_decimal(value: str) -> float:
+    return float(value.replace(",", "."))
+
+
+def _least_squares(pontos: list[dict]) -> tuple[float, float] | None:
+    if not pontos:
+        return None
+    xs = [parse_decimal(p["indicacao"]) for p in pontos]
+    cs = [parse_decimal(p["correcao"]) for p in pontos]
+    ys = [x + c for x, c in zip(xs, cs)]
+    n = len(xs)
+    sum_x = sum(xs)
+    sum_y = sum(ys)
+    sum_xy = sum(x * y for x, y in zip(xs, ys))
+    sum_x2 = sum(x * x for x in xs)
+    denom = n * sum_x2 - sum_x * sum_x
+    if denom == 0:
+        return None
+    a = (n * sum_xy - sum_x * sum_y) / denom
+    b = (sum_y - a * sum_x) / n
+    return a, b
+
+
+def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
+                       calibracao: dict | None) -> dict:
+    result = {}
+    if raw_temperature is not None and raw_temperature != "":
+        raw_t = float(raw_temperature)
+        result["temperature_raw"] = raw_temperature
+        result["temperature"] = raw_temperature
+        result["temperature_corrected"] = None
+        if calibracao and calibracao.get("temperatura"):
+            coeff = _least_squares(calibracao["temperatura"])
+            if coeff:
+                a, b = coeff
+                corrected = a * raw_t + b
+                result["temperature"] = f"{corrected:.1f}"
+                result["temperature_corrected"] = f"{corrected:.1f}"
+                result["temperature_coeff_a"] = round(a, 6)
+                result["temperature_coeff_b"] = round(b, 6)
+
+    if raw_humidity is not None and raw_humidity != "":
+        raw_u = float(raw_humidity)
+        result["humidity_raw"] = raw_humidity
+        result["humidity"] = raw_humidity
+        result["humidity_corrected"] = None
+        if calibracao and calibracao.get("umidade"):
+            coeff = _least_squares(calibracao["umidade"])
+            if coeff:
+                a, b = coeff
+                corrected = a * raw_u + b
+                result["humidity"] = f"{corrected:.1f}"
+                result["humidity_corrected"] = f"{corrected:.1f}"
+                result["humidity_coeff_a"] = round(a, 6)
+                result["humidity_coeff_b"] = round(b, 6)
+
+    return result
