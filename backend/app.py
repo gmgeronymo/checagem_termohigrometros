@@ -310,9 +310,11 @@ def api_snapshots_csv():
     )
 
 
-def _monitor_loop(interval: float):
+def _monitor_loop(interval: float, n_readings: int):
     global monitoring
-    while monitoring:
+    for i in range(n_readings):
+        if not monitoring:
+            break
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         snapshot = {"timestamp": ts, "readings": {}}
 
@@ -376,6 +378,8 @@ def _monitor_loop(interval: float):
 
         time.sleep(interval)
 
+    monitoring = False
+
 
 def _compute_errors_normalizados(snapshot: dict):
     with lock:
@@ -415,7 +419,8 @@ def _compute_errors_normalizados(snapshot: dict):
 def api_monitor_start():
     global monitoring, monitor_thread
     data = request.get_json() or {}
-    interval = float(data.get("interval", 5))
+    interval = float(data.get("interval", 10))
+    n_readings = int(data.get("n_readings", 10))
 
     if monitoring:
         return jsonify({"status": "ja em execucao", "interval": interval})
@@ -424,9 +429,9 @@ def api_monitor_start():
         snapshots.clear()
 
     monitoring = True
-    monitor_thread = threading.Thread(target=_monitor_loop, args=(interval,), daemon=True)
+    monitor_thread = threading.Thread(target=_monitor_loop, args=(interval, n_readings), daemon=True)
     monitor_thread.start()
-    return jsonify({"status": "iniciado", "interval": interval})
+    return jsonify({"status": "iniciado", "interval": interval, "n_readings": n_readings})
 
 
 @app.route("/api/monitor/stop", methods=["POST"])

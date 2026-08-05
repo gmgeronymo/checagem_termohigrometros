@@ -109,8 +109,10 @@ input.cal-input-wide { width: 100%; max-width: 280px; }
     <div class="section-header">
       <h2>Monitoramento</h2>
       <div class="monitor-bar">
+        <label style="font-size:0.85rem">Leituras:</label>
+        <input type="number" id="monitorNReadings" value="10" min="1" style="width:60px">
         <label style="font-size:0.85rem">Intervalo (s):</label>
-        <input type="number" id="monitorInterval" value="5" min="1">
+        <input type="number" id="monitorInterval" value="10" min="1" style="width:60px">
         <button class="btn btn-success" onclick="startMonitor()" id="btnStart">Iniciar</button>
         <button class="btn btn-danger" onclick="stopMonitor()" id="btnStop">Parar</button>
       </div>
@@ -672,6 +674,7 @@ function renderPorts(ports) {
   html += '</ul>';
   section.innerHTML = html;
 
+  updateLabelTypeMap(ports);
   updateRefSelectors(ports);
 
   for (const p of ports) {
@@ -707,6 +710,8 @@ function renderMonitorTable(snapshots) {
     }
   }
   const labels = [...allLabels].sort();
+  const refTempLabel = globalRefs.temperatura || '';
+  const refUmidLabel = globalRefs.umidade || '';
 
   let html = '';
   html += `<div class="export-bar">`;
@@ -722,10 +727,17 @@ function renderMonitorTable(snapshots) {
   html += `<div class="table-wrapper"><table class="snapshot-table">`;
   html += `<thead><tr><th>Timestamp</th>`;
   for (const lb of labels) {
-    html += `<th>${lb}<br><span class="col-sub">T (&#176;C)</span></th>`;
-    html += `<th>${lb}<br><span class="col-sub">U (%)</span></th>`;
-    html += `<th>${lb}<br><span class="col-sub">En T</span></th>`;
-    html += `<th>${lb}<br><span class="col-sub">En U</span></th>`;
+    const info = labelTypeMap[lb] || {};
+    const isRefTemp = refTempLabel === lb;
+    const isRefUmid = refUmidLabel === lb;
+    const hasHum = info.hasHumidity;
+
+    html += `<th>${lb}${isRefTemp ? ' <span class="col-sub">Ref T</span>' : ''}<br><span class="col-sub">T (&#176;C)</span></th>`;
+    if (hasHum) {
+      html += `<th>${lb}${isRefUmid ? ' <span class="col-sub">Ref U</span>' : ''}<br><span class="col-sub">U (%)</span></th>`;
+    }
+    if (!isRefTemp) html += `<th>${lb}<br><span class="col-sub">En T</span></th>`;
+    if (hasHum && !isRefUmid) html += `<th>${lb}<br><span class="col-sub">En U</span></th>`;
   }
   html += `</tr></thead><tbody>`;
 
@@ -733,15 +745,25 @@ function renderMonitorTable(snapshots) {
     html += `<tr><td class="ts-col">${s.timestamp}</td>`;
     for (const lb of labels) {
       const r = s.readings[lb];
+      const info = labelTypeMap[lb] || {};
+      const isRefTemp = refTempLabel === lb;
+      const isRefUmid = refUmidLabel === lb;
+      const hasHum = info.hasHumidity;
+      const refStyle = 'font-weight:700;background:#e8eaf6';
+
       if (r) {
-        html += `<td>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
-        html += `<td>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+        html += `<td${isRefTemp ? ` style="${refStyle}"` : ''}>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
+        if (hasHum) {
+          html += `<td${isRefUmid ? ` style="${refStyle}"` : ''}>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+        }
         const en = r.en || {};
-        html += renderEnCell(en.temperatura);
-        html += renderEnCell(en.umidade);
+        if (!isRefTemp) html += renderEnCell(en.temperatura);
+        if (hasHum && !isRefUmid) html += renderEnCell(en.umidade);
       } else {
-        html += `<td class="error-cell">-</td><td class="error-cell">-</td>`;
-        html += `<td class="error-cell">-</td><td class="error-cell">-</td>`;
+        html += `<td class="error-cell">-</td>`;
+        if (hasHum) html += `<td class="error-cell">-</td>`;
+        if (!isRefTemp) html += `<td class="error-cell">-</td>`;
+        if (hasHum && !isRefUmid) html += `<td class="error-cell">-</td>`;
       }
     }
     html += `</tr>`;
@@ -765,6 +787,7 @@ async function loadReferences() {
   try {
     const resp = await fetch(`${API}/references`);
     const refs = await resp.json();
+    globalRefs = refs;
     document.getElementById('refTemperatura').value = refs.temperatura || '';
     document.getElementById('refUmidade').value = refs.umidade || '';
   } catch (e) {}
@@ -778,6 +801,7 @@ async function setReference(tipo, label) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [tipo]: label })
     });
+    globalRefs[tipo] = label;
   } catch (e) {
     addDebug(`ref ERRO: ${e.message}`, 'err');
   }
@@ -805,6 +829,20 @@ function updateRefSelectors(ports) {
 
 let monitorPolling = null;
 let tablePolling = null;
+let globalRefs = { temperatura: '', umidade: '' };
+let labelTypeMap = {};
+
+function updateLabelTypeMap(ports) {
+  labelTypeMap = {};
+  for (const p of ports) {
+    if (p.assigned_label && p.assigned_type) {
+      labelTypeMap[p.assigned_label] = {
+        type: p.assigned_type,
+        hasHumidity: p.assigned_type === 'sato' || p.assigned_type === 'sato_old'
+      };
+    }
+  }
+}
 
 async function updateMonitorStatus() {
   try {
@@ -833,8 +871,9 @@ async function updateMonitorStatus() {
 }
 
 async function startMonitor() {
-  const interval = document.getElementById('monitorInterval').value || 5;
-  addDebug(`POST /api/monitor/start interval=${interval}`);
+  const interval = document.getElementById('monitorInterval').value || 10;
+  const nReadings = document.getElementById('monitorNReadings').value || 10;
+  addDebug(`POST /api/monitor/start interval=${interval} n=${nReadings}`);
 
   const activeDevices = [...document.querySelectorAll('select[data-device]')]
     .filter(s => s.value)
@@ -849,7 +888,7 @@ async function startMonitor() {
     await fetch(`${API}/monitor/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ interval: parseInt(interval) })
+      body: JSON.stringify({ interval: parseInt(interval), n_readings: parseInt(nReadings) })
     });
     updateMonitorStatus();
     addDebug(`monitor iniciado`, 'ok');
