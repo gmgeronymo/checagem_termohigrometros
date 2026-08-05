@@ -705,6 +705,9 @@ function renderMonitorTable(snapshots) {
     return;
   }
 
+  const refTempLabel = globalRefs.temperatura || '';
+  const refUmidLabel = globalRefs.umidade || '';
+
   const allLabels = new Set();
   for (const s of snapshots) {
     for (const lb of Object.keys(s.readings)) {
@@ -718,8 +721,6 @@ function renderMonitorTable(snapshots) {
     if (!aRef && bRef) return 1;
     return a.localeCompare(b);
   });
-  const refTempLabel = globalRefs.temperatura || '';
-  const refUmidLabel = globalRefs.umidade || '';
 
   let html = '';
   html += `<div class="export-bar">`;
