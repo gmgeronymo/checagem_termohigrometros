@@ -207,10 +207,73 @@ class Sato(Instrument):
             ser.close()
 
 
+class HygroPalm(Instrument):
+    BAUD = 19200
+    BYTESIZE = serial.SEVENBITS
+    PARITY = serial.PARITY_EVEN
+    STOPBITS = serial.STOPBITS_ONE
+    _query_string = "{u00RDD}"
+
+    def init(self, ser: serial.Serial) -> None:
+        pass
+
+    def _do_debug(self, ser: serial.Serial) -> dict:
+        ser.write((self._query_string + "\r").encode())
+        rcv = ser.read(256)
+        return {
+            "command": self._query_string + "\\r",
+            "raw_hex": rcv.hex(" "),
+            "raw_bytes": len(rcv),
+            "decoded": repr(rcv.decode("utf-8", errors="replace")),
+        }
+
+    def read(self, port: str, timeout: int = 2) -> dict:
+        ser = serial.Serial(
+            port=port,
+            baudrate=self.BAUD,
+            bytesize=self.BYTESIZE,
+            parity=self.PARITY,
+            stopbits=self.STOPBITS,
+            timeout=timeout,
+        )
+        try:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            ser.write((self._query_string + "\r").encode())
+            rcv = ser.read(256)
+            dec_str = rcv.decode("utf-8").strip()
+            if not dec_str:
+                raise ValueError(
+                    f"Resposta vazia do HygroPalm. Verifique:\n"
+                    f"  - Cabo serial conectado e instrumento ligado\n"
+                    f"  - Baud rate: {self.BAUD} (7E1)\n"
+                    f"  - Porta correta: {port}\n"
+                    f"  - Comando enviado: {self._query_string}"
+                )
+            data_array = dec_str.replace(self._query_string.replace("}", " "), "").split(";")
+            if len(data_array) < 2:
+                raise ValueError(
+                    f"Formato inesperado do HygroPalm.\n"
+                    f"Dados recebidos: {repr(dec_str)}\n"
+                    f"Esperado: {self._query_string} umid;temp;..."
+                )
+            humidity = float(data_array[0])
+            temperature = float(data_array[1])
+            return {
+                "temperature": f"{temperature:.1f}",
+                "humidity": f"{humidity:.1f}",
+                "unit_temp": "°C",
+                "unit_umid": "%",
+            }
+        finally:
+            ser.close()
+
+
 INSTRUMENT_TYPES = {
-    "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A},
-    "sato": {"label": "Sato Novo", "class": Sato},
-    "sato_old": {"label": "Sato Antigo", "class": SatoOld},
+    "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A, "has_humidity": False},
+    "sato": {"label": "Sato Novo", "class": Sato, "has_humidity": True},
+    "sato_old": {"label": "Sato Antigo", "class": SatoOld, "has_humidity": True},
+    "hygropalm": {"label": "HygroPalm", "class": HygroPalm, "has_humidity": True},
 }
 
 

@@ -49,6 +49,11 @@ def api_ports():
             if instr_type in INSTRUMENT_TYPES
             else ""
         )
+        port["has_humidity"] = (
+            INSTRUMENT_TYPES[instr_type].get("has_humidity", True)
+            if instr_type in INSTRUMENT_TYPES
+            else True
+        )
         port["last_reading"] = readings.get(device)
     return jsonify(ports)
 
@@ -221,7 +226,10 @@ def api_debug():
 def api_instrument_types():
     types = {}
     for key, info in INSTRUMENT_TYPES.items():
-        types[key] = info["label"]
+        types[key] = {
+            "label": info["label"],
+            "has_humidity": info.get("has_humidity", True),
+        }
     return jsonify(types)
 
 

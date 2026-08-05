@@ -649,6 +649,7 @@ function renderPorts(ports) {
     html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
     html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
     html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
+    html += `<option value="hygropalm" ${p.assigned_type === 'hygropalm' ? 'selected' : ''}>HygroPalm</option>`;
     html += `</select>`;
 
     html += `<select data-modo-device="${p.device}" onchange="setModoCorrecao('${p.device}', this.value)" style="font-size:0.8rem">`;
@@ -838,7 +839,7 @@ function updateLabelTypeMap(ports) {
     if (p.assigned_label && p.assigned_type) {
       labelTypeMap[p.assigned_label] = {
         type: p.assigned_type,
-        hasHumidity: p.assigned_type === 'sato' || p.assigned_type === 'sato_old'
+        hasHumidity: p.has_humidity !== false
       };
     }
   }
