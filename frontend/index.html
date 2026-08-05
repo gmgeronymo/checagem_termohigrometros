@@ -360,7 +360,7 @@ function renderPorts(ports) {
     html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
     html += `</select>`;
 
-    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')" ${!hasType ? 'disabled' : ''}>`;
+    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;
 
     html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
 
