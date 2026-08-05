@@ -23,6 +23,8 @@ main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
 .port-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 select, input[type="text"] { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; background: #fff; }
 input[type="text"] { width: 100px; }
+input.cal-input { width: 100%; max-width: 160px; }
+input.cal-input-wide { width: 100%; max-width: 280px; }
 .label-input::placeholder { color: #bbb; font-style: italic; }
 .btn { padding: 0.4rem 1rem; border: none; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500; transition: background 0.2s; white-space: nowrap; }
 .btn-primary { background: #1a237e; color: #fff; }
@@ -33,6 +35,8 @@ input[type="text"] { width: 100px; }
 .btn-danger:hover { background: #d32f2f; }
 .btn-outline { background: transparent; border: 1px solid #ccc; color: #555; }
 .btn-outline:hover { background: #f5f5f5; }
+.btn-cal { background: #1565c0; color: #fff; font-size: 0.75rem; }
+.btn-cal:hover { background: #1976d2; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .reading-card { background: #f8f9fa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 1rem; margin-top: 0.5rem; }
 .reading-card .label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
@@ -64,11 +68,27 @@ input[type="text"] { width: 100px; }
 .snapshot-table tr:hover td { background: #f5f5f5; }
 .export-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .col-sub { font-weight: 400; opacity: 0.75; font-size: 0.7rem; }
+
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 8px; width: 90%; max-width: 750px; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+.modal-header { padding: 1rem 1.5rem; border-bottom: 1px solid #e8e8e8; display: flex; justify-content: space-between; align-items: center; }
+.modal-header h3 { font-size: 1.1rem; }
+.modal-body { padding: 1.5rem; }
+.modal-footer { padding: 1rem 1.5rem; border-top: 1px solid #e8e8e8; display: flex; justify-content: flex-end; gap: 0.5rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; color: #555; }
+.cal-table { width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.cal-table th { background: #f0f0f0; padding: 0.4rem 0.5rem; text-align: left; font-weight: 600; font-size: 0.8rem; border-bottom: 2px solid #ddd; }
+.cal-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #eee; }
+.cal-table input { width: 100%; padding: 0.35rem 0.5rem; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85rem; text-align: center; }
+.cal-table input:focus { border-color: #1a237e; outline: none; }
+.cal-has-data { color: #2e7d32; font-weight: 600; font-size: 0.75rem; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Checagem de Termohigrômetros</h1>
+  <h1>Checagem de Termohigr&#xF4;metros</h1>
   <span class="status" id="monitorStatus">Monitoramento: Parado</span>
 </header>
 <main>
@@ -120,6 +140,51 @@ input[type="text"] { width: 100px; }
   </div>
 </main>
 
+<div class="modal-overlay" id="calModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="calModalTitle">Certificado de Calibracao</h3>
+      <button class="btn btn-outline" onclick="closeCalModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="calDevice">
+      <div class="form-group">
+        <label>Label do Instrumento</label>
+        <input type="text" id="calLabel" class="cal-input" readonly style="background:#f5f5f5">
+      </div>
+      <div class="form-group">
+        <label>Numero do Certificado</label>
+        <input type="text" id="calCertificado" class="cal-input-wide" placeholder="DIMCI 0123/2026">
+      </div>
+      <div class="form-group">
+        <label>Data da Calibracao</label>
+        <input type="text" id="calData" class="cal-input" placeholder="DD/MM/AAAA">
+      </div>
+
+      <h4 style="margin:1rem 0 0.5rem;font-size:0.95rem;color:#1a237e">Pontos - Temperatura</h4>
+      <table class="cal-table" id="calTemperaturaTable">
+        <thead><tr><th>Indicacao</th><th>Correcao</th><th>U</th><th style="width:40px"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="btn btn-outline" onclick="addCalRow('temperatura')" style="font-size:0.8rem">+ Adicionar Ponto</button>
+
+      <h4 style="margin:1.5rem 0 0.5rem;font-size:0.95rem;color:#1a237e" id="calUmidTitle">Pontos - Umidade</h4>
+      <div id="calUmidSection">
+      <table class="cal-table" id="calUmidadeTable">
+        <thead><tr><th>Indicacao</th><th>Correcao</th><th>U</th><th style="width:40px"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="btn btn-outline" onclick="addCalRow('umidade')" style="font-size:0.8rem">+ Adicionar Ponto</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="deleteCal()" id="btnDeleteCal" style="margin-right:auto">Excluir</button>
+      <button class="btn btn-outline" onclick="closeCalModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCal()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = '/api';
 const debugLines = [];
@@ -142,6 +207,151 @@ function renderDebug() {
 function clearDebugLog() {
   debugLines.length = 0;
   renderDebug();
+}
+
+function isoToBr(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return dateStr;
+}
+
+function brToIso(dateStr) {
+  if (!dateStr) return '';
+  const cleaned = dateStr.replace(/\s/g, '');
+  const parts = cleaned.split('/');
+  if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+  return dateStr;
+}
+
+async function openCalModal(device, label, instrType) {
+  document.getElementById('calDevice').value = device;
+  document.getElementById('calLabel').value = label;
+
+  const hasHumidity = instrType === 'sato' || instrType === 'sato_old';
+  const umidSection = document.getElementById('calUmidSection');
+  document.getElementById('calUmidTitle').style.display = hasHumidity ? '' : 'none';
+  if (umidSection) umidSection.style.display = hasHumidity ? '' : 'none';
+
+  addDebug(`GET /api/calibracao/${encodeURIComponent(label)}`);
+
+  try {
+    const resp = await fetch(`${API}/calibracao/${encodeURIComponent(label)}`);
+    const cal = await resp.json();
+
+    document.getElementById('calCertificado').value = cal.certificado || '';
+    document.getElementById('calData').value = isoToBr(cal.data_calibracao);
+
+    fillCalTable('temperatura', cal.temperatura || []);
+    if (hasHumidity) {
+      fillCalTable('umidade', cal.umidade || []);
+    }
+
+    document.getElementById('calModal').classList.add('active');
+  } catch (e) {
+    addDebug(`erro ao carregar calibracao: ${e.message}`, 'err');
+  }
+}
+
+function fillCalTable(tipo, pontos) {
+  const tbody = document.querySelector(`#cal${tipo.charAt(0).toUpperCase() + tipo.slice(1)}Table tbody`);
+  tbody.innerHTML = '';
+
+  if (!pontos.length) {
+    for (let i = 0; i < 3; i++) addCalRow(tipo);
+    return;
+  }
+
+  for (const p of pontos) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" class="cal-indicacao" value="${escHtml(p.indicacao)}" placeholder="0,0"></td>
+      <td><input type="text" class="cal-correcao" value="${escHtml(p.correcao)}" placeholder="0,0"></td>
+      <td><input type="text" class="cal-u" value="${escHtml(p.incerteza_u)}" placeholder="0,0"></td>
+      <td><button class="btn btn-outline" onclick="this.closest('tr').remove()" style="font-size:0.7rem;padding:0.15rem 0.4rem">&times;</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addCalRow(tipo) {
+  const tbody = document.querySelector(`#cal${tipo.charAt(0).toUpperCase() + tipo.slice(1)}Table tbody`);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="cal-indicacao" placeholder="0,0"></td>
+    <td><input type="text" class="cal-correcao" placeholder="0,0"></td>
+    <td><input type="text" class="cal-u" placeholder="0,0"></td>
+    <td><button class="btn btn-outline" onclick="this.closest('tr').remove()" style="font-size:0.7rem;padding:0.15rem 0.4rem">&times;</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function readCalTable(tipo) {
+  const rows = document.querySelectorAll(`#cal${tipo.charAt(0).toUpperCase() + tipo.slice(1)}Table tbody tr`);
+  const pontos = [];
+  for (const tr of rows) {
+    const indicacao = tr.querySelector('.cal-indicacao')?.value.trim() || '';
+    const correcao = tr.querySelector('.cal-correcao')?.value.trim() || '';
+    const u = tr.querySelector('.cal-u')?.value.trim() || '';
+    if (indicacao || correcao || u) {
+      pontos.push({ indicacao, correcao, incerteza_u: u });
+    }
+  }
+  return pontos;
+}
+
+async function saveCal() {
+  const device = document.getElementById('calDevice').value;
+  const label = document.getElementById('calLabel').value;
+  const certificado = document.getElementById('calCertificado').value;
+  const dataBr = document.getElementById('calData').value;
+  const dataIso = brToIso(dataBr);
+
+  const temperatura = readCalTable('temperatura');
+  const umidade = readCalTable('umidade');
+
+  addDebug(`POST /api/calibracao label=${label}`);
+
+  try {
+    const resp = await fetch(`${API}/calibracao`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, certificado, data_calibracao: dataIso, temperatura, umidade })
+    });
+    const result = await resp.json();
+    if (result.status === 'ok') {
+      addDebug(`calibracao salva para ${label}`, 'ok');
+      closeCalModal();
+      refreshPorts();
+    } else {
+      addDebug(`erro: ${result.error}`, 'err');
+      alert(result.error || 'Erro ao salvar');
+    }
+  } catch (e) {
+    addDebug(`erro ao salvar: ${e.message}`, 'err');
+  }
+}
+
+async function deleteCal() {
+  const label = document.getElementById('calLabel').value;
+  if (!confirm(`Excluir certificado de calibracao de ${label}?`)) return;
+
+  try {
+    await fetch(`${API}/calibracao/${encodeURIComponent(label)}`, { method: 'DELETE' });
+    addDebug(`calibracao excluida para ${label}`, 'ok');
+    closeCalModal();
+    refreshPorts();
+  } catch (e) {
+    addDebug(`erro ao excluir: ${e.message}`, 'err');
+  }
+}
+
+function closeCalModal() {
+  document.getElementById('calModal').classList.remove('active');
 }
 
 async function refreshPorts() {
@@ -170,6 +380,7 @@ async function assignInstrument(device, type) {
   const escaped = CSS.escape(device);
   const statusEl = document.getElementById(`status-${escaped}`);
   const btnRead = document.getElementById(`btn-read-${escaped}`);
+  const btnCal = document.getElementById(`btn-cal-${escaped}`);
   const labelInput = document.getElementById(`label-${escaped}`);
   const label = labelInput ? labelInput.value.trim() : '';
   if (statusEl) statusEl.innerHTML = '<span class="spinner"></span>';
@@ -188,9 +399,8 @@ async function assignInstrument(device, type) {
         ? '<span class="badge badge-waiting">Configurado</span>'
         : '';
     }
-    if (btnRead) {
-      btnRead.disabled = !type;
-    }
+    if (btnRead) btnRead.disabled = !type;
+    if (btnCal) btnCal.style.display = type ? '' : 'none';
     addDebug(`assign OK para ${device}`, 'ok');
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<span class="error">Erro: ${e.message}</span>`;
@@ -325,7 +535,7 @@ function renderReading(device, data) {
 
   if (data.temperature !== undefined) {
     html += `<div style="display:flex;align-items:baseline;gap:0.5rem">`;
-    html += `<div><span class="label">Temperatura</span><br><span class="value">${data.temperature}</span><span class="unit">${data.unit_temp || data.unit || '°C'}</span></div>`;
+    html += `<div><span class="label">Temperatura</span><br><span class="value">${data.temperature}</span><span class="unit">${data.unit_temp || data.unit || '\u00B0C'}</span></div>`;
     if (data.humidity !== undefined) {
       html += `<div><span class="label">Umidade</span><br><span class="value">${data.humidity}</span><span class="unit">${data.unit_umid || '%'}</span></div>`;
     }
@@ -366,6 +576,7 @@ function renderPorts(ports) {
 
     if (hasType) {
       html += `<button class="btn btn-outline" onclick="debugSerial('${p.device}','${p.assigned_type}')" style="font-size:0.75rem">Debug</button>`;
+      html += `<button class="btn btn-cal" id="btn-cal-${escaped}" onclick="openCalModal('${p.device}','${p.assigned_label || ''}','${p.assigned_type}')">Calibracao</button>`;
     }
 
     html += `<span id="status-${escaped}">${hasType ? '<span class="badge badge-waiting">Configurado</span>' : ''}</span>`;
@@ -412,32 +623,33 @@ function renderMonitorTable(snapshots) {
   const labels = [...allLabels].sort();
 
   let html = '';
-
   html += `<div class="export-bar">`;
   html += `<button class="btn btn-outline" onclick="exportCSV()">Exportar CSV</button>`;
   html += `<span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} registros</span>`;
   html += `</div>`;
 
+  if (!labels.length) {
+    section.innerHTML = html + '<div class="empty-state">Sem instrumentos com label configurado</div>';
+    return;
+  }
+
   html += `<div class="table-wrapper"><table class="snapshot-table">`;
-  html += `<thead><tr>`;
-  html += `<th>Timestamp</th>`;
+  html += `<thead><tr><th>Timestamp</th>`;
   for (const lb of labels) {
-    html += `<th>${lb}<br><span class="col-sub">T (°C)</span></th>`;
+    html += `<th>${lb}<br><span class="col-sub">T (&#176;C)</span></th>`;
     html += `<th>${lb}<br><span class="col-sub">U (%)</span></th>`;
   }
   html += `</tr></thead><tbody>`;
 
   for (const s of snapshots.slice().reverse()) {
-    html += `<tr>`;
-    html += `<td class="ts-col">${s.timestamp}</td>`;
+    html += `<tr><td class="ts-col">${s.timestamp}</td>`;
     for (const lb of labels) {
       const r = s.readings[lb];
       if (r) {
         html += `<td>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
         html += `<td>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
       } else {
-        html += `<td class="error-cell">-</td>`;
-        html += `<td class="error-cell">-</td>`;
+        html += `<td class="error-cell">-</td><td class="error-cell">-</td>`;
       }
     }
     html += `</tr>`;

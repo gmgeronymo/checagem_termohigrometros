@@ -9,11 +9,14 @@ from datetime import datetime
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes
 from backend.instruments import INSTRUMENT_TYPES, get_instrument
 from backend.serial_utils import find_usb_serial_ports
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
 CORS(app)
+
+init_db()
 
 assignments: dict[str, dict] = {}
 readings: dict[str, dict] = {}
@@ -317,3 +320,40 @@ def api_monitor_stop():
 @app.route("/api/monitor/status", methods=["GET"])
 def api_monitor_status():
     return jsonify({"running": monitoring})
+
+
+@app.route("/api/calibracao/<label>", methods=["GET"])
+def api_get_calibracao(label):
+    cal = get_calibracao(label)
+    if cal is None:
+        return jsonify({"label": label, "certificado": "", "data_calibracao": "", "temperatura": [], "umidade": []})
+    return jsonify(cal)
+
+
+@app.route("/api/calibracao", methods=["POST"])
+def api_save_calibracao():
+    data = request.get_json()
+    label = data.get("label", "").strip()
+    certificado = data.get("certificado", "").strip()
+    data_calibracao = data.get("data_calibracao", "").strip()
+    temperatura = data.get("temperatura", [])
+    umidade = data.get("umidade", [])
+
+    if not label:
+        return jsonify({"error": "label e obrigatorio"}), 400
+
+    save_calibracao(label, certificado, data_calibracao, temperatura, umidade)
+    return jsonify({"status": "ok", "label": label})
+
+
+@app.route("/api/calibracao/<label>", methods=["DELETE"])
+def api_delete_calibracao(label):
+    deleted = delete_calibracao(label)
+    if deleted:
+        return jsonify({"status": "ok", "label": label})
+    return jsonify({"error": "registro nao encontrado"}), 404
+
+
+@app.route("/api/calibracoes", methods=["GET"])
+def api_list_calibracoes():
+    return jsonify(db_list_calibracoes())
