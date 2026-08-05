@@ -251,7 +251,7 @@ async function openCalModal(device) {
   document.getElementById('calDevice').value = device;
   document.getElementById('calLabel').value = label;
 
-  const hasHumidity = instrType === 'sato' || instrType === 'sato_old';
+  const hasHumidity = instrumentTypesMap[instrType]?.has_humidity !== false;
   const umidSection = document.getElementById('calUmidSection');
   document.getElementById('calUmidTitle').style.display = hasHumidity ? '' : 'none';
   if (umidSection) umidSection.style.display = hasHumidity ? '' : 'none';
@@ -832,6 +832,7 @@ let monitorPolling = null;
 let tablePolling = null;
 let globalRefs = { temperatura: '', umidade: '' };
 let labelTypeMap = {};
+let instrumentTypesMap = {};
 
 function updateLabelTypeMap(ports) {
   labelTypeMap = {};
@@ -960,7 +961,15 @@ function stopTablePolling() {
   }
 }
 
+async function loadInstrumentTypes() {
+  try {
+    const resp = await fetch(`${API}/instrument_types`);
+    if (resp.ok) instrumentTypesMap = await resp.json();
+  } catch (e) {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  loadInstrumentTypes();
   refreshPorts();
   loadReferences();
   updateMonitorStatus();
