@@ -243,11 +243,20 @@ def _least_squares(pontos: list[dict]) -> tuple[float, float] | None:
     return a, b
 
 
+def _decimal_places(value: str) -> int:
+    if "." in value:
+        return len(value.split(".")[1])
+    if "," in value:
+        return len(value.split(",")[1])
+    return 0
+
+
 def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
                        calibracao: dict | None) -> dict:
     result = {}
     if raw_temperature is not None and raw_temperature != "":
         raw_t = float(raw_temperature)
+        ndigits = _decimal_places(raw_temperature)
         result["temperature_raw"] = raw_temperature
         result["temperature"] = raw_temperature
         result["temperature_corrected"] = None
@@ -256,13 +265,14 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
             if coeff:
                 a, b = coeff
                 corrected = a * raw_t + b
-                result["temperature"] = f"{corrected:.1f}"
-                result["temperature_corrected"] = f"{corrected:.1f}"
+                result["temperature"] = f"{corrected:.{ndigits}f}"
+                result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
                 result["temperature_coeff_a"] = round(a, 6)
                 result["temperature_coeff_b"] = round(b, 6)
 
     if raw_humidity is not None and raw_humidity != "":
         raw_u = float(raw_humidity)
+        ndigits = _decimal_places(raw_humidity)
         result["humidity_raw"] = raw_humidity
         result["humidity"] = raw_humidity
         result["humidity_corrected"] = None
@@ -271,8 +281,8 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
             if coeff:
                 a, b = coeff
                 corrected = a * raw_u + b
-                result["humidity"] = f"{corrected:.1f}"
-                result["humidity_corrected"] = f"{corrected:.1f}"
+                result["humidity"] = f"{corrected:.{ndigits}f}"
+                result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
                 result["humidity_coeff_a"] = round(a, 6)
                 result["humidity_coeff_b"] = round(b, 6)
 
