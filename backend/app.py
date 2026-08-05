@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import traceback
 from datetime import datetime
@@ -329,56 +330,21 @@ def _monitor_loop(interval: float, n_readings: int):
         with lock:
             items = list(assignments.items())
 
-        for device, cfg in items:
-            instr_type = cfg.get("type", "")
-            label = cfg.get("label", device)
-            modo = cfg.get("modo_correcao", "ponto_fixo")
-            try:
-                instrument = get_instrument(instr_type)
-                result = instrument.read(device)
-
-                raw_temp = result.get("temperature")
-                raw_umid = result.get("humidity")
-                calibracao = get_calibracao(label) if label else None
-                correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
-                result.update(correcoes)
-
-                if calibracao:
-                    result["certificado"] = calibracao.get("certificado", "")
-                    result["data_calibracao"] = calibracao.get("data_calibracao", "")
-                    result["has_calibracao"] = True
-                else:
-                    result["has_calibracao"] = False
-
-                result["timestamp"] = ts
-                result["device"] = device
-                result["instrument_type"] = instr_type
-                result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
-                result["label"] = label
-                result["status"] = "ok"
-
-                with lock:
-                    readings[device] = result
-
-                flattened = {
-                    "temperature": result.get("temperature", ""),
-                    "humidity": result.get("humidity", ""),
-                }
-                snapshot["readings"][label] = flattened
-            except Exception as e:
-                with lock:
-                    readings[device] = {
-                        "device": device,
-                        "instrument_type": instr_type,
-                        "label": label,
-                        "status": "error",
-                        "error": str(e),
-                        "timestamp": ts,
-                    }
+        with ThreadPoolExecutor(max_workers=len(items)) as executor:
+            futures = {
+                executor.submit(_read_one, device, cfg, ts): device
+                for device, cfg in items
+            }
+            for future in as_completed(futures):
+                device = futures[future]
+                try:
+                    label, flattened = future.result()
+                    snapshot["readings"][label] = flattened
+                except Exception:
+                    pass
 
         if snapshot["readings"]:
             _compute_errors_normalizados(snapshot)
-
             with lock:
                 snapshots.append(snapshot)
                 if len(snapshots) > 1000:
@@ -387,6 +353,56 @@ def _monitor_loop(interval: float, n_readings: int):
         time.sleep(interval)
 
     monitoring = False
+
+
+def _read_one(device: str, cfg: dict, ts: str):
+    instr_type = cfg.get("type", "")
+    label = cfg.get("label", device)
+    modo = cfg.get("modo_correcao", "ponto_fixo")
+
+    try:
+        instrument = get_instrument(instr_type)
+        result = instrument.read(device)
+
+        raw_temp = result.get("temperature")
+        raw_umid = result.get("humidity")
+        calibracao = get_calibracao(label) if label else None
+        correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
+        result.update(correcoes)
+
+        if calibracao:
+            result["certificado"] = calibracao.get("certificado", "")
+            result["data_calibracao"] = calibracao.get("data_calibracao", "")
+            result["has_calibracao"] = True
+        else:
+            result["has_calibracao"] = False
+
+        result["timestamp"] = ts
+        result["device"] = device
+        result["instrument_type"] = instr_type
+        result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
+        result["label"] = label
+        result["status"] = "ok"
+
+        with lock:
+            readings[device] = result
+
+        flattened = {
+            "temperature": result.get("temperature", ""),
+            "humidity": result.get("humidity", ""),
+        }
+        return label, flattened
+    except Exception as e:
+        with lock:
+            readings[device] = {
+                "device": device,
+                "instrument_type": instr_type,
+                "label": label,
+                "status": "error",
+                "error": str(e),
+                "timestamp": ts,
+            }
+        raise
 
 
 def _compute_errors_normalizados(snapshot: dict):
