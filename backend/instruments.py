@@ -1,3 +1,4 @@
+import traceback
 import time
 import serial
 from abc import ABC, abstractmethod
@@ -10,6 +11,30 @@ class Instrument(ABC):
 
     @abstractmethod
     def init(self, ser: serial.Serial) -> None:
+        ...
+
+    def debug_raw(self, port: str, timeout: int = 3) -> dict:
+        ser = serial.Serial(
+            port=port,
+            baudrate=self.BAUD,
+            bytesize=self.BYTESIZE,
+            parity=self.PARITY,
+            stopbits=self.STOPBITS,
+            timeout=timeout,
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
+        )
+        try:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            self.init(ser)
+            return self._do_debug(ser)
+        finally:
+            ser.close()
+
+    @abstractmethod
+    def _do_debug(self, ser: serial.Serial) -> dict:
         ...
 
 
@@ -25,6 +50,16 @@ class Fluke1502A(Instrument):
         ser.write(b"DU=H\r\n")
         time.sleep(0.1)
 
+    def _do_debug(self, ser: serial.Serial) -> dict:
+        ser.write(b"F\r\n")
+        rcv = ser.read(256)
+        return {
+            "command": "F\\r\\n",
+            "raw_hex": rcv.hex(" "),
+            "raw_bytes": len(rcv),
+            "decoded": repr(rcv.decode("utf-8", errors="replace")),
+        }
+
     def read(self, port: str, timeout: int = 2) -> dict:
         ser = serial.Serial(
             port=port,
@@ -37,13 +72,23 @@ class Fluke1502A(Instrument):
             rtscts=False,
             dsrdtr=False,
         )
-        self.init(ser)
-        ser.write(b"F\r\n")
-        rcv = ser.read(50)
-        ser.close()
-
-        temperature = rcv.decode("utf-8").strip()
-        return {"temperature": temperature, "unit": "°C"}
+        try:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            self.init(ser)
+            ser.write(b"F\r\n")
+            rcv = ser.read(50)
+            temperature = rcv.decode("utf-8").strip()
+            if not temperature:
+                raise ValueError(
+                    f"Resposta vazia do Fluke 1502A. Verifique:\n"
+                    f"  - Cabo serial conectado e instrumento ligado\n"
+                    f"  - Baud rate: {self.BAUD}\n"
+                    f"  - Porta correta: {port}"
+                )
+            return {"temperature": temperature, "unit": "°C"}
+        finally:
+            ser.close()
 
 
 class SatoOld(Instrument):
@@ -55,6 +100,18 @@ class SatoOld(Instrument):
     def init(self, ser: serial.Serial) -> None:
         pass
 
+    def _do_debug(self, ser: serial.Serial) -> dict:
+        lines = []
+        for i in range(5):
+            line = ser.readline()
+            if line:
+                lines.append({
+                    "n": i + 1,
+                    "raw_hex": line.hex(" "),
+                    "decoded": repr(line.decode("utf-8", errors="replace")),
+                })
+        return {"lines_read": lines}
+
     def read(self, port: str, timeout: int = 2) -> dict:
         ser = serial.Serial(
             port=port,
@@ -64,16 +121,32 @@ class SatoOld(Instrument):
             stopbits=self.STOPBITS,
             timeout=timeout,
         )
-        ser.readline()
-        rcv = ser.readline()
-        ser.close()
-
-        dec_str = rcv.decode("utf-8")
-        data = dec_str.split()
-        temperature = float(data[1].replace(",", "")) / 10
-        humidity = float(data[2]) / 10
-
-        return {"temperature": f"{temperature:.1f}", "humidity": f"{humidity:.1f}", "unit_temp": "°C", "unit_umid": "%"}
+        try:
+            ser.reset_input_buffer()
+            ser.readline()
+            rcv = ser.readline()
+            dec_str = rcv.decode("utf-8")
+            if not dec_str.strip():
+                raise ValueError(
+                    f"Resposta vazia do Sato Antigo. Verifique:\n"
+                    f"  - Cabo serial conectado e instrumento ligado\n"
+                    f"  - Baud rate: {self.BAUD}\n"
+                    f"  - Porta correta: {port}\n"
+                    f"  - O instrumento envia dados continuamente?\n"
+                    f"  - Timeout atual: {timeout}s"
+                )
+            data = dec_str.split()
+            if len(data) < 3:
+                raise ValueError(
+                    f"Formato inesperado do Sato Antigo.\n"
+                    f"Dados recebidos: {repr(dec_str)}\n"
+                    f"Esperado: campos separados por espaco com temp e umidade"
+                )
+            temperature = float(data[1].replace(",", "")) / 10
+            humidity = float(data[2]) / 10
+            return {"temperature": f"{temperature:.1f}", "humidity": f"{humidity:.1f}", "unit_temp": "°C", "unit_umid": "%"}
+        finally:
+            ser.close()
 
 
 class Sato(Instrument):
@@ -85,6 +158,18 @@ class Sato(Instrument):
     def init(self, ser: serial.Serial) -> None:
         pass
 
+    def _do_debug(self, ser: serial.Serial) -> dict:
+        lines = []
+        for i in range(5):
+            line = ser.readline()
+            if line:
+                lines.append({
+                    "n": i + 1,
+                    "raw_hex": line.hex(" "),
+                    "decoded": repr(line.decode("utf-8", errors="replace")),
+                })
+        return {"lines_read": lines}
+
     def read(self, port: str, timeout: int = 2) -> dict:
         ser = serial.Serial(
             port=port,
@@ -94,16 +179,32 @@ class Sato(Instrument):
             stopbits=self.STOPBITS,
             timeout=timeout,
         )
-        ser.readline()
-        rcv = ser.readline()
-        ser.close()
-
-        dec_str = rcv.decode("utf-8")
-        data = dec_str.split()
-        temperature = float(data[1].replace(",", "")) / 10
-        humidity = float(data[2]) / 10
-
-        return {"temperature": f"{temperature:.1f}", "humidity": f"{humidity:.1f}", "unit_temp": "°C", "unit_umid": "%"}
+        try:
+            ser.reset_input_buffer()
+            ser.readline()
+            rcv = ser.readline()
+            dec_str = rcv.decode("utf-8")
+            if not dec_str.strip():
+                raise ValueError(
+                    f"Resposta vazia do Sato Novo. Verifique:\n"
+                    f"  - Cabo serial conectado e instrumento ligado\n"
+                    f"  - Baud rate: {self.BAUD} (7E1)\n"
+                    f"  - Porta correta: {port}\n"
+                    f"  - O instrumento envia dados continuamente?\n"
+                    f"  - Timeout atual: {timeout}s"
+                )
+            data = dec_str.split()
+            if len(data) < 3:
+                raise ValueError(
+                    f"Formato inesperado do Sato Novo.\n"
+                    f"Dados recebidos: {repr(dec_str)}\n"
+                    f"Esperado: campos separados por espaco com temp e umidade"
+                )
+            temperature = float(data[1].replace(",", "")) / 10
+            humidity = float(data[2]) / 10
+            return {"temperature": f"{temperature:.1f}", "humidity": f"{humidity:.1f}", "unit_temp": "°C", "unit_umid": "%"}
+        finally:
+            ser.close()
 
 
 INSTRUMENT_TYPES = {

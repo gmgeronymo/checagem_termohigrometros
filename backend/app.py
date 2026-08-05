@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import traceback
 from datetime import datetime
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -46,8 +47,8 @@ def api_assign():
     device = data.get("device")
     instr_type = data.get("type")
 
-    if not device or not instr_type:
-        return jsonify({"error": "device e type sao obrigatorios"}), 400
+    if not device:
+        return jsonify({"error": "device e obrigatorio"}), 400
 
     if instr_type not in INSTRUMENT_TYPES and instr_type != "":
         return jsonify({"error": f"tipo invalido: {instr_type}"}), 400
@@ -79,18 +80,68 @@ def api_read():
     try:
         instrument = get_instrument(instr_type)
         result = instrument.read(device)
-        result["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result["device"] = device
-        result["instrument_type"] = instr_type
-        result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
-        result["status"] = "ok"
-
+    except Exception as e:
+        tb = traceback.format_exc()
+        error_result = {
+            "status": "error",
+            "device": device,
+            "instrument_type": instr_type,
+            "instrument_label": INSTRUMENT_TYPES.get(instr_type, {}).get("label", instr_type),
+            "error": str(e),
+            "traceback": tb,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
         with lock:
-            readings[device] = result
+            readings[device] = error_result
+        return jsonify(error_result), 500
 
+    result["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    result["device"] = device
+    result["instrument_type"] = instr_type
+    result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
+    result["status"] = "ok"
+
+    with lock:
+        readings[device] = result
+
+    return jsonify(result)
+
+
+@app.route("/api/debug", methods=["POST"])
+def api_debug():
+    data = request.get_json()
+    device = data.get("device")
+    instr_type = data.get("type")
+
+    if not device:
+        return jsonify({"error": "device e obrigatorio"}), 400
+
+    if not instr_type or instr_type not in INSTRUMENT_TYPES:
+        return jsonify({"error": "tipo de instrumento nao informado ou invalido"}), 400
+
+    try:
+        instrument = get_instrument(instr_type)
+        raw = instrument.debug_raw(device, timeout=data.get("timeout", 3))
+        result = {
+            "status": "ok",
+            "device": device,
+            "instrument_type": instr_type,
+            "instrument_label": INSTRUMENT_TYPES[instr_type]["label"],
+            "debug": raw,
+            "baud": instrument.BAUD,
+            "bytesize": instrument.BYTESIZE,
+            "parity": instrument.PARITY,
+            "stopbits": instrument.STOPBITS,
+        }
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e), "status": "error", "device": device}), 500
+        tb = traceback.format_exc()
+        return jsonify({
+            "status": "error",
+            "device": device,
+            "error": str(e),
+            "traceback": tb,
+        }), 500
 
 
 @app.route("/api/instrument_types", methods=["GET"])

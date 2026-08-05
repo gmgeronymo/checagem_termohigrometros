@@ -48,6 +48,12 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a237e; border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .refresh-time { font-size: 0.8rem; color: #999; }
+.debug-log { background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 0.8rem; padding: 1rem; border-radius: 6px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-top: 0.5rem; }
+.debug-log .ts { color: #6a9955; }
+.debug-log .ok { color: #4ec9b0; }
+.debug-log .err { color: #f44747; }
+.debug-log .info { color: #569cd6; }
+.traceback-box { background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 4px; padding: 0.75rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -83,10 +89,41 @@ select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; fon
       <div class="empty-state">Configure um instrumento e faça uma leitura</div>
     </div>
   </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Debug / Log</h2>
+      <button class="btn btn-outline" onclick="clearDebugLog()">Limpar</button>
+    </div>
+    <div class="section-body">
+      <div class="debug-log" id="debugLog"><span class="ts">-- aguardando operacoes --</span></div>
+    </div>
+  </div>
 </main>
 
 <script>
 const API = '/api';
+const debugLines = [];
+
+function addDebug(msg, cls) {
+  const now = new Date().toLocaleTimeString();
+  debugLines.push({ ts: now, msg, cls: cls || 'info' });
+  renderDebug();
+}
+
+function renderDebug() {
+  const el = document.getElementById('debugLog');
+  if (!el) return;
+  const last = debugLines.slice(-100);
+  el.innerHTML = last.map(d =>
+    `<span class="ts">[${d.ts}]</span> <span class="${d.cls}">${d.msg}</span>`
+  ).join('\n');
+}
+
+function clearDebugLog() {
+  debugLines.length = 0;
+  renderDebug();
+}
 
 async function refreshPorts() {
   const btn = document.getElementById('btnRefresh');
@@ -94,12 +131,15 @@ async function refreshPorts() {
   btn.innerHTML = '<span class="spinner"></span>';
 
   const showAll = document.getElementById('chkAllPorts')?.checked ? '1' : '0';
+  addDebug(`GET /api/ports?all=${showAll}`);
 
   try {
     const resp = await fetch(`${API}/ports?all=${showAll}`);
     const ports = await resp.json();
+    addDebug(`ports: ${ports.length} encontrada(s)`, 'ok');
     renderPorts(ports);
   } catch (e) {
+    addDebug(`ERRO: ${e.message}`, 'err');
     document.getElementById('portsSection').innerHTML = `<div class="error">Erro ao buscar portas: ${e.message}</div>`;
   } finally {
     btn.disabled = false;
@@ -108,9 +148,11 @@ async function refreshPorts() {
 }
 
 async function assignInstrument(device, type) {
-  const select = document.querySelector(`select[data-device="${device}"]`);
   const statusEl = document.getElementById(`status-${CSS.escape(device)}`);
+  const btnRead = document.getElementById(`btn-read-${CSS.escape(device)}`);
   if (statusEl) statusEl.innerHTML = '<span class="spinner"></span>';
+
+  addDebug(`POST /api/assign device=${device} type=${type || '(vazio)'}`);
 
   try {
     await fetch(`${API}/assign`, {
@@ -118,13 +160,19 @@ async function assignInstrument(device, type) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device, type })
     });
+
     if (statusEl) {
       statusEl.innerHTML = type
         ? '<span class="badge badge-waiting">Configurado</span>'
         : '';
     }
+    if (btnRead) {
+      btnRead.disabled = !type;
+    }
+    addDebug(`assign OK para ${device} -> ${type || 'desvinculado'}`, 'ok');
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<span class="error">Erro: ${e.message}</span>`;
+    addDebug(`assign ERRO: ${e.message}`, 'err');
   }
 }
 
@@ -135,6 +183,8 @@ async function readInstrument(device) {
   btn.innerHTML = '<span class="spinner"></span>';
   if (resultEl) resultEl.innerHTML = '<span class="spinner"></span>';
 
+  addDebug(`POST /api/read device=${device}`);
+
   try {
     const resp = await fetch(`${API}/read`, {
       method: 'POST',
@@ -142,21 +192,86 @@ async function readInstrument(device) {
       body: JSON.stringify({ device })
     });
     const data = await resp.json();
+
     if (data.status === 'ok') {
+      addDebug(`leitura OK: ${JSON.stringify(data)}`, 'ok');
       renderReading(device, data);
     } else {
-      if (resultEl) resultEl.innerHTML = `<div class="error">${data.error}</div>`;
+      const errMsg = `${data.error || 'erro desconhecido'}`;
+      addDebug(`leitura ERRO: ${errMsg}`, 'err');
+      if (resultEl) {
+        let html = `<div class="error">${errMsg}</div>`;
+        if (data.traceback) {
+          html += `<details><summary style="cursor:pointer;font-size:0.8rem;margin-top:0.25rem">Traceback</summary>`;
+          html += `<div class="traceback-box">${data.traceback}</div></details>`;
+        }
+        resultEl.innerHTML = html;
+      }
     }
   } catch (e) {
-    if (resultEl) resultEl.innerHTML = `<div class="error">Erro: ${e.message}</div>`;
+    addDebug(`fetch ERRO: ${e.message}`, 'err');
+    if (resultEl) resultEl.innerHTML = `<div class="error">Erro de rede: ${e.message}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Ler';
   }
 }
 
-function renderReading(device, data) {
+async function debugSerial(device, type) {
+  const resultEl = document.getElementById(`reading-${CSS.escape(device)}`);
+  addDebug(`POST /api/debug device=${device} type=${type}`);
+
+  if (resultEl) resultEl.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const resp = await fetch(`${API}/debug`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, type })
+    });
+    const data = await resp.json();
+
+    if (data.status === 'ok') {
+      addDebug(`debug OK: ${JSON.stringify(data.debug)}`, 'ok');
+      renderDebugResult(device, data);
+    } else {
+      const errMsg = `${data.error || 'erro desconhecido'}`;
+      addDebug(`debug ERRO: ${errMsg}`, 'err');
+      if (resultEl) {
+        let html = `<div class="error">${errMsg}</div>`;
+        if (data.traceback) {
+          html += `<details><summary style="cursor:pointer;font-size:0.8rem;margin-top:0.25rem">Traceback</summary>`;
+          html += `<div class="traceback-box">${data.traceback}</div></details>`;
+        }
+        resultEl.innerHTML = html;
+      }
+    }
+  } catch (e) {
+    addDebug(`debug fetch ERRO: ${e.message}`, 'err');
+    if (resultEl) resultEl.innerHTML = `<div class="error">Erro de rede: ${e.message}</div>`;
+  }
+}
+
+function renderDebugResult(device, data) {
   const container = document.getElementById(`reading-${device}`);
+  if (!container) return;
+
+  let html = `<div class="reading-card">`;
+  html += `<span class="badge badge-ok">Debug: ${data.instrument_label}</span>`;
+  html += `<span style="margin-left:1rem;font-size:0.75rem;color:#888">Baud: ${data.baud} | Bits: ${data.bytesize} | Paridade: ${data.parity}</span>`;
+
+  if (data.debug) {
+    html += `<div class="debug-log" style="margin-top:0.5rem;max-height:300px">`;
+    html += JSON.stringify(data.debug, null, 2);
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function renderReading(device, data) {
+  const container = document.getElementById(`reading-${CSS.escape(device)}`);
   if (!container) return;
 
   let html = `<div class="reading-card">`;
@@ -204,6 +319,10 @@ function renderPorts(ports) {
 
     html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
 
+    if (hasType) {
+      html += `<button class="btn btn-outline" onclick="debugSerial('${p.device}','${p.assigned_type}')" style="font-size:0.75rem">Debug</button>`;
+    }
+
     html += `<span id="status-${escaped}">${hasType ? '<span class="badge badge-waiting">Configurado</span>' : ''}</span>`;
     html += `</div>`;
 
@@ -214,8 +333,20 @@ function renderPorts(ports) {
   section.innerHTML = html;
 
   for (const p of ports) {
-    if (p.last_reading && p.last_reading.status === 'ok') {
-      renderReading(p.device, p.last_reading);
+    if (p.last_reading) {
+      if (p.last_reading.status === 'ok') {
+        renderReading(p.device, p.last_reading);
+      } else if (p.last_reading.status === 'error') {
+        const el = document.getElementById(`reading-${CSS.escape(p.device)}`);
+        if (el) {
+          let errHtml = `<div class="error">${p.last_reading.error || 'Erro'}</div>`;
+          if (p.last_reading.traceback) {
+            errHtml += `<details><summary style="cursor:pointer;font-size:0.8rem;margin-top:0.25rem">Traceback</summary>`;
+            errHtml += `<div class="traceback-box">${p.last_reading.traceback}</div></details>`;
+          }
+          el.innerHTML = errHtml;
+        }
+      }
     }
   }
 }
@@ -248,6 +379,7 @@ async function updateMonitorStatus() {
 
 async function startMonitor() {
   const interval = document.getElementById('monitorInterval').value || 5;
+  addDebug(`POST /api/monitor/start interval=${interval}`);
   try {
     await fetch(`${API}/monitor/start`, {
       method: 'POST',
@@ -255,16 +387,21 @@ async function startMonitor() {
       body: JSON.stringify({ interval: parseInt(interval) })
     });
     updateMonitorStatus();
+    addDebug(`monitor iniciado`, 'ok');
   } catch (e) {
+    addDebug(`monitor ERRO: ${e.message}`, 'err');
     alert('Erro ao iniciar monitoramento: ' + e.message);
   }
 }
 
 async function stopMonitor() {
+  addDebug(`POST /api/monitor/stop`);
   try {
     await fetch(`${API}/monitor/stop`, { method: 'POST' });
     updateMonitorStatus();
+    addDebug(`monitor parado`, 'ok');
   } catch (e) {
+    addDebug(`monitor ERRO: ${e.message}`, 'err');
     alert('Erro ao parar monitoramento: ' + e.message);
   }
 }
@@ -277,10 +414,16 @@ function startPollingReadings() {
       for (const p of ports) {
         if (p.last_reading) {
           const el = document.getElementById(`reading-${CSS.escape(p.device)}`);
-          if (el && p.last_reading.status === 'ok') {
+          if (!el) continue;
+          if (p.last_reading.status === 'ok') {
             renderReading(p.device, p.last_reading);
-          } else if (el && p.last_reading.status === 'error') {
-            el.innerHTML = `<div class="error">Erro: ${p.last_reading.error || 'desconhecido'}</div>`;
+          } else if (p.last_reading.status === 'error') {
+            let errHtml = `<div class="error">${p.last_reading.error || 'Erro'}</div>`;
+            if (p.last_reading.traceback) {
+              errHtml += `<details><summary style="cursor:pointer;font-size:0.8rem;margin-top:0.25rem">Traceback</summary>`;
+              errHtml += `<div class="traceback-box">${p.last_reading.traceback}</div></details>`;
+            }
+            el.innerHTML = errHtml;
           }
         }
       }
