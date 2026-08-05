@@ -719,6 +719,10 @@ function renderMonitorTable(snapshots) {
     const bRef = b === refTempLabel || b === refUmidLabel;
     if (aRef && !bRef) return -1;
     if (!aRef && bRef) return 1;
+    const aTempRef = a === refTempLabel;
+    const bTempRef = b === refTempLabel;
+    if (aTempRef && !bTempRef) return -1;
+    if (!aTempRef && bTempRef) return 1;
     return a.localeCompare(b);
   });
 
@@ -884,8 +888,8 @@ async function updateMonitorStatus() {
 }
 
 async function startMonitor() {
-  const interval = document.getElementById('monitorInterval').value || 10;
-  const nReadings = document.getElementById('monitorNReadings').value || 10;
+  const interval = parseInt(document.getElementById('monitorInterval').value) || 20;
+  const nReadings = parseInt(document.getElementById('monitorNReadings').value) || 10;
   addDebug(`POST /api/monitor/start interval=${interval} n=${nReadings}`);
 
   const activeDevices = [...document.querySelectorAll('select[data-device]')]
@@ -904,7 +908,7 @@ async function startMonitor() {
       body: JSON.stringify({ interval: parseInt(interval), n_readings: parseInt(nReadings) })
     });
     updateMonitorStatus();
-    addDebug(`monitor iniciado: ${nReadings} leituras a cada ${interval}s`, 'ok');
+    addDebug(`monitor iniciado: ${nReadings} rodadas, 1 a cada ${interval}s`, 'ok');
   } catch (e) {
     addDebug(`monitor ERRO: ${e.message}`, 'err');
     alert('Erro ao iniciar monitoramento: ' + e.message);
