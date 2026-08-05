@@ -698,9 +698,10 @@ function renderPorts(ports) {
 }
 
 function renderMonitorTable(snapshots) {
-  const section = document.getElementById('monitorSection');
-  if (!snapshots.length) {
-    section.innerHTML = '<div class="empty-state">Aguardando leituras...</div>';
+  try {
+    const section = document.getElementById('monitorSection');
+  if (!snapshots || !snapshots.length) {
+    section.innerHTML = '<div class="empty-state">Aguardando leituras... (0 registros)</div>';
     return;
   }
 
@@ -778,6 +779,9 @@ function renderMonitorTable(snapshots) {
 
   html += `</tbody></table></div>`;
   section.innerHTML = html;
+  } catch (e) {
+    addDebug(`renderTable erro: ${e.message}`, 'err');
+  }
 }
 
 function exportCSV() {
@@ -866,14 +870,14 @@ async function updateMonitorStatus() {
       btnStart.disabled = true;
       btnStop.disabled = false;
       if (!monitorPolling) startPollingReadings();
-      if (!tablePolling) startTablePolling();
+      if (!tablePolling) { startTablePolling(); addDebug('tablePolling iniciado', 'ok'); }
     } else {
       statusEl.textContent = 'Monitoramento: Parado';
       statusEl.style.color = '';
       btnStart.disabled = false;
       btnStop.disabled = true;
       if (monitorPolling) stopPollingReadings();
-      if (tablePolling) stopTablePolling();
+      if (tablePolling) { stopTablePolling(); addDebug('tablePolling parado', 'info'); }
     }
   } catch (e) {}
 }
@@ -899,7 +903,7 @@ async function startMonitor() {
       body: JSON.stringify({ interval: parseInt(interval), n_readings: parseInt(nReadings) })
     });
     updateMonitorStatus();
-    addDebug(`monitor iniciado`, 'ok');
+    addDebug(`monitor iniciado: ${nReadings} leituras a cada ${interval}s`, 'ok');
   } catch (e) {
     addDebug(`monitor ERRO: ${e.message}`, 'err');
     alert('Erro ao iniciar monitoramento: ' + e.message);
@@ -956,7 +960,9 @@ function startTablePolling() {
       const resp = await fetch(`${API}/snapshots`);
       const snaps = await resp.json();
       renderMonitorTable(snaps);
-    } catch (e) {}
+    } catch (e) {
+      addDebug(`tablePolling erro: ${e.message}`, 'err');
+    }
   }, 1500);
 }
 
