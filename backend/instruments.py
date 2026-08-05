@@ -334,7 +334,7 @@ def _correcao_ponto_fixo(pontos: list[dict], valor_referencia: float) -> dict | 
 
 
 def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
-                       calibracao: dict | None, modo: str = "linear") -> dict:
+                       calibracao: dict | None, modo: str = "ponto_fixo") -> dict:
     result = {}
     if raw_temperature is not None and raw_temperature != "":
         raw_t = float(raw_temperature)

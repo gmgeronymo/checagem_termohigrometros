@@ -43,7 +43,7 @@ def api_ports():
         instr_type = cfg.get("type", "")
         port["assigned_type"] = instr_type
         port["assigned_label"] = cfg.get("label", "")
-        port["modo_correcao"] = cfg.get("modo_correcao", "linear")
+        port["modo_correcao"] = cfg.get("modo_correcao", "ponto_fixo")
         port["instrument_label"] = (
             INSTRUMENT_TYPES[instr_type]["label"]
             if instr_type in INSTRUMENT_TYPES
@@ -77,7 +77,7 @@ def api_assign():
             readings.pop(device, None)
         else:
             existing = assignments.get(device, {})
-            modo = data.get("modo", existing.get("modo_correcao", "linear"))
+            modo = data.get("modo", existing.get("modo_correcao", "ponto_fixo"))
             assignments[device] = {"type": instr_type, "label": label, "modo_correcao": modo}
 
     return jsonify({"status": "ok", "device": device, "type": instr_type, "label": label})
@@ -104,7 +104,7 @@ def api_label():
 def api_modo_correcao():
     data = request.get_json()
     device = data.get("device")
-    modo = data.get("modo", "linear")
+    modo = data.get("modo", "ponto_fixo")
 
     if not device:
         return jsonify({"error": "device e obrigatorio"}), 400
@@ -133,7 +133,7 @@ def api_read():
 
     instr_type = cfg.get("type", "")
     label = cfg.get("label", "")
-    modo = cfg.get("modo_correcao", "linear")
+    modo = cfg.get("modo_correcao", "ponto_fixo")
     if not instr_type:
         return jsonify({"error": "dispositivo nao configurado"}), 400
 
@@ -332,7 +332,7 @@ def _monitor_loop(interval: float, n_readings: int):
         for device, cfg in items:
             instr_type = cfg.get("type", "")
             label = cfg.get("label", device)
-            modo = cfg.get("modo_correcao", "linear")
+            modo = cfg.get("modo_correcao", "ponto_fixo")
             try:
                 instrument = get_instrument(instr_type)
                 result = instrument.read(device)

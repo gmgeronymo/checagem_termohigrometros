@@ -653,8 +653,8 @@ function renderPorts(ports) {
     html += `</select>`;
 
     html += `<select data-modo-device="${p.device}" onchange="setModoCorrecao('${p.device}', this.value)" style="font-size:0.8rem">`;
-    html += `<option value="linear" ${p.modo_correcao !== 'ponto_fixo' ? 'selected' : ''}>Eq. Linear</option>`;
-    html += `<option value="ponto_fixo" ${p.modo_correcao === 'ponto_fixo' ? 'selected' : ''}>Ponto Fixo</option>`;
+    html += `<option value="linear" ${p.modo_correcao === 'linear' ? 'selected' : ''}>Eq. Linear</option>`;
+    html += `<option value="ponto_fixo" ${p.modo_correcao !== 'linear' ? 'selected' : ''}>Ponto Fixo</option>`;
     html += `</select>`;
 
     html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;
