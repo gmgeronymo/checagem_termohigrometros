@@ -522,6 +522,9 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
         calibracao = get_calibracao(label) if label else None
 
         inst_data = {"tipo": instr_type}
+        info = INSTRUMENT_TYPES.get(instr_type, {})
+        inst_data["res_temp"] = info.get("res_temp", 0.1)
+        inst_data["res_umid"] = info.get("res_umid", 0.1)
 
         temps = medicoes_temp_corr.get(label, [])
         temps_raw = medicoes_temp.get(label, [])

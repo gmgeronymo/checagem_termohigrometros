@@ -754,6 +754,13 @@ function _renderSummaryTable(section, snapshot) {
 
   const refStyle = 'font-weight:700;background:#e8eaf6';
 
+  function fmtRes(val, resolucao) {
+    if (val === undefined || val === null || val === '') return '-';
+    if (!resolucao || resolucao <= 0) return val;
+    const nd = String(resolucao).split('.')[1]?.length || 1;
+    return Number(val).toFixed(nd);
+  }
+
   for (const lb of labels) {
     const inst = instrumentos[lb];
     const isRefTemp = refTempLabel === lb;
@@ -761,25 +768,27 @@ function _renderSummaryTable(section, snapshot) {
     const hasHum = labelTypeMap[lb]?.hasHumidity !== false;
 
     const ut = inst.incerteza_temp || {};
+    const resT = inst.res_temp || 0.1;
     html += `<tr>`;
     html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}">${lb}${isRefTemp ? ' Ref T' : ''}${isRefUmid ? ' Ref U' : ''}</td>`;
     html += `<td>T (&#176;C)</td>`;
-    html += `<td>${inst.media_bruta_temp !== undefined ? inst.media_bruta_temp : '-'}</td>`;
-    html += `<td>${ut.media !== undefined ? ut.media : '-'}</td>`;
-    html += `<td>${ut.u_combinada !== undefined ? ut.u_combinada : '-'}</td>`;
-    html += `<td>${ut.U_expandida !== undefined ? ut.U_expandida : '-'}</td>`;
+    html += `<td>${fmtRes(inst.media_bruta_temp, resT)}</td>`;
+    html += `<td>${fmtRes(ut.media, resT)}</td>`;
+    html += `<td>${ut.u_combinada !== undefined ? Number(ut.u_combinada).toFixed(6) : '-'}</td>`;
+    html += `<td>${ut.U_expandida !== undefined ? Number(ut.U_expandida).toFixed(6) : '-'}</td>`;
     html += `<td>${isRefTemp ? '-' : renderEnCellTd(inst.en?.temperatura)}</td>`;
     html += `</tr>`;
 
     if (hasHum) {
       html += `<tr>`;
       const uu = inst.incerteza_umid || {};
+      const resU = inst.res_umid || 0.1;
       html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}"></td>`;
       html += `<td>U (%)</td>`;
-      html += `<td>${inst.media_bruta_umid !== undefined ? inst.media_bruta_umid : '-'}</td>`;
-      html += `<td>${uu.media !== undefined ? uu.media : '-'}</td>`;
-      html += `<td>${uu.u_combinada !== undefined ? uu.u_combinada : '-'}</td>`;
-      html += `<td>${uu.U_expandida !== undefined ? uu.U_expandida : '-'}</td>`;
+      html += `<td>${fmtRes(inst.media_bruta_umid, resU)}</td>`;
+      html += `<td>${fmtRes(uu.media, resU)}</td>`;
+      html += `<td>${uu.u_combinada !== undefined ? Number(uu.u_combinada).toFixed(6) : '-'}</td>`;
+      html += `<td>${uu.U_expandida !== undefined ? Number(uu.U_expandida).toFixed(6) : '-'}</td>`;
       html += `<td>${isRefUmid ? '-' : renderEnCellTd(inst.en?.umidade)}</td>`;
       html += `</tr>`;
     }
