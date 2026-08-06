@@ -446,12 +446,17 @@ def calc_incerteza(medicoes: list[float], instr_type: str, tipo: str,
 
     if modo == "linear":
         u_corr = 0
+        u_cert_medio = 0
         if calibracao:
             pontos = calibracao.get(tipo, [])
             if len(pontos) >= 2:
                 reg = _least_squares(pontos)
                 if reg:
                     u_corr = _u_correcao(reg, mean)
+            if pontos:
+                certs = [parse_decimal(p["incerteza_u"]) / k for p in pontos]
+                u_cert_medio = sum(certs) / len(certs) if certs else 0
+        u_corr = max(u_corr, u_cert_medio)
         componentes["u_corr"] = round(u_corr, 8)
         sum_sq += u_corr**2
     else:
