@@ -423,7 +423,8 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
 
 
 def calc_incerteza(medicoes: list[float], instr_type: str, tipo: str,
-                   calibracao: dict | None, k: float = 2.0) -> dict:
+                   calibracao: dict | None, k: float = 2.0,
+                   modo: str = "linear") -> dict:
     n = len(medicoes)
     if n < 2:
         return {}
@@ -440,25 +441,28 @@ def calc_incerteza(medicoes: list[float], instr_type: str, tipo: str,
         resolucao = info.get("res_umid", 0.1)
     u_res = resolucao / (12 ** 0.5)
 
-    u_cert = None
-    if calibracao:
-        pontos = calibracao.get(tipo, [])
-        if pontos:
-            u_cert = parse_decimal(pontos[0]["incerteza_u"]) / k
+    componentes = {"u_repet": round(u_repet, 8), "u_res": round(u_res, 8)}
+    sum_sq = u_repet**2 + u_res**2
 
-    u_corr = 0
-    if calibracao:
-        pontos = calibracao.get(tipo, [])
-        if len(pontos) >= 2:
-            reg = _least_squares(pontos)
-            if reg:
-                u_corr = _u_correcao(reg, mean)
-
-    componentes = {"u_repet": round(u_repet, 8), "u_res": round(u_res, 8), "u_corr": round(u_corr, 8)}
-    sum_sq = u_repet**2 + u_res**2 + u_corr**2
-    if u_cert is not None:
-        componentes["u_cert"] = round(u_cert, 8)
-        sum_sq += u_cert**2
+    if modo == "linear":
+        u_corr = 0
+        if calibracao:
+            pontos = calibracao.get(tipo, [])
+            if len(pontos) >= 2:
+                reg = _least_squares(pontos)
+                if reg:
+                    u_corr = _u_correcao(reg, mean)
+        componentes["u_corr"] = round(u_corr, 8)
+        sum_sq += u_corr**2
+    else:
+        u_cert = None
+        if calibracao:
+            pontos = calibracao.get(tipo, [])
+            if pontos:
+                u_cert = parse_decimal(pontos[0]["incerteza_u"]) / k
+        if u_cert is not None:
+            componentes["u_cert"] = round(u_cert, 8)
+            sum_sq += u_cert**2
 
     u_combinada = sum_sq ** 0.5
     return {

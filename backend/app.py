@@ -289,8 +289,10 @@ def api_snapshots_csv():
     lines.append(_row("Intervalo (s)", _csv_val(s.get("intervalo", ""))))
     lines.append("")
 
+    live_snaps = [sn for sn in snaps if sn.get("readings")]
+
     lines.append(_row("MEDICOES BRUTAS"))
-    header = ["Medicao"]
+    header = ["Timestamp"]
     for lb in labels:
         inst = instrumentos[lb]
         if "medicoes_temp" in inst:
@@ -300,7 +302,8 @@ def api_snapshots_csv():
     lines.append(_row(*header))
 
     for i in range(n_med):
-        row = [str(i + 1)]
+        ts = live_snaps[i]["timestamp"] if i < len(live_snaps) else ""
+        row = [ts]
         for lb in labels:
             inst = instrumentos[lb]
             if "medicoes_temp" in inst:
@@ -313,7 +316,7 @@ def api_snapshots_csv():
 
     lines.append("")
     lines.append(_row("MEDICOES CORRIGIDAS (Eq. Linear)"))
-    header = ["Medicao"]
+    header = ["Timestamp"]
     for lb in labels:
         inst = instrumentos[lb]
         if "medicoes_temp_corr" in inst:
@@ -323,7 +326,8 @@ def api_snapshots_csv():
     lines.append(_row(*header))
 
     for i in range(n_med):
-        row = [str(i + 1)]
+        ts = live_snaps[i]["timestamp"] if i < len(live_snaps) else ""
+        row = [ts]
         for lb in labels:
             inst = instrumentos[lb]
             if "medicoes_temp_corr" in inst:
@@ -336,7 +340,7 @@ def api_snapshots_csv():
 
     lines.append("")
     lines.append(_row("MEDICOES CORRIGIDAS (Ponto Fixo)"))
-    header = ["Medicao"]
+    header = ["Timestamp"]
     for lb in labels:
         inst = instrumentos[lb]
         if "medicoes_temp_corr_pf" in inst:
@@ -346,7 +350,8 @@ def api_snapshots_csv():
     lines.append(_row(*header))
 
     for i in range(n_med):
-        row = [str(i + 1)]
+        ts = live_snaps[i]["timestamp"] if i < len(live_snaps) else ""
+        row = [ts]
         for lb in labels:
             inst = instrumentos[lb]
             if "medicoes_temp_corr_pf" in inst:
@@ -365,12 +370,13 @@ def api_snapshots_csv():
         ref_temp = references.get("temperatura", "")
         ref_umid = references.get("umidade", "")
 
+    lin_keys = [("incerteza_temp", "temperatura", "Temperatura"),
+                ("incerteza_umid", "umidade", "Umidade")]
     for lb in labels:
         inst = instrumentos[lb]
         inst_media_bruta_temp = inst.get("media_bruta_temp")
         inst_media_bruta_umid = inst.get("media_bruta_umid")
-        for tipo, grand in [("temperatura", "Temperatura"), ("umidade", "Umidade")]:
-            key = f"incerteza_{tipo}"
+        for key, tipo, grand in lin_keys:
             if key in inst:
                 u = inst[key]
                 bruta = inst_media_bruta_temp if tipo == "temperatura" else inst_media_bruta_umid
@@ -580,10 +586,11 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
                 pf = _correcao_ponto_fixo(calibracao.get("temperatura", []), 23.0)
                 if pf:
                     c = pf["correcao"]
-                    inst_data["medicoes_temp_corr_pf"] = [f"{float(r) + c:.6f}" for r in temps_raw]
+                    nd = len(str(info.get("res_temp", 0.1)).split(".")[1])
+                    inst_data["medicoes_temp_corr_pf"] = [f"{float(r) + c:.{nd}f}" for r in temps_raw]
                     inst_data["incerteza_temp_pf"] = calc_incerteza(
                         _to_floats(inst_data["medicoes_temp_corr_pf"]),
-                        instr_type, "temperatura", calibracao)
+                        instr_type, "temperatura", calibracao, modo="ponto_fixo")
                     inst_data["temp_coeff_pf"] = pf
 
         if umids_raw:
@@ -598,10 +605,11 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
                 pf = _correcao_ponto_fixo(calibracao.get("umidade", []), 50.0)
                 if pf:
                     c = pf["correcao"]
-                    inst_data["medicoes_umid_corr_pf"] = [f"{float(r) + c:.6f}" for r in umids_raw]
+                    nd = len(str(info.get("res_umid", 0.1)).split(".")[1])
+                    inst_data["medicoes_umid_corr_pf"] = [f"{float(r) + c:.{nd}f}" for r in umids_raw]
                     inst_data["incerteza_umid_pf"] = calc_incerteza(
                         _to_floats(inst_data["medicoes_umid_corr_pf"]),
-                        instr_type, "umidade", calibracao)
+                        instr_type, "umidade", calibracao, modo="ponto_fixo")
                     inst_data["umid_coeff_pf"] = pf
                 inst_data["media_bruta_umid"] = round(sum(raw_floats) / len(raw_floats), 6)
 
