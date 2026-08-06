@@ -690,12 +690,21 @@ function renderMonitorTable(snapshots, status) {
     const section = document.getElementById('monitorSection');
     const running = status?.running;
     const progress = status?.progress || {};
+    const finalizado = status?.finalizado;
+    const lastFromStatus = status?.last_snapshot;
 
-    const last = snapshots?.length ? snapshots[snapshots.length - 1] : null;
+    const last = lastFromStatus?.instrumentos ? lastFromStatus
+               : (snapshots?.length ? snapshots[snapshots.length - 1] : null);
 
-    if (last && last.instrumentos) {
+    if (last && last.instrumentos && Object.keys(last.instrumentos).length > 0) {
       _renderSummaryTable(section, last);
       if (!running) stopTablePolling();
+      return;
+    }
+
+    if (finalizado && last && last.instrumentos) {
+      _renderSummaryTable(section, last);
+      stopTablePolling();
       return;
     }
 
@@ -705,22 +714,15 @@ function renderMonitorTable(snapshots, status) {
       if (running) {
         section.querySelector('.export-bar')?.insertAdjacentHTML('afterend',
           `<div style="text-align:center;font-size:0.75rem;color:#888;margin-bottom:0.25rem">Medi&ccedil;&atilde;o ${progress.current || 0} de ${progress.total || 0}</div>`);
-      } else {
-        addDebug('monitor finalizado, aguardando resumo...', 'info');
-        setTimeout(() => {
-          fetch(`${API}/snapshots`).then(r => r.json()).then(s => {
-            const final = s?.length ? s[s.length - 1] : null;
-            if (final && final.instrumentos) {
-              _renderSummaryTable(section, final);
-              stopTablePolling();
-            }
-          }).catch(() => {});
-        }, 2000);
+      } else if (finalizado) {
+        addDebug('finalizado sem resumo - verifique o log do servidor', 'err');
+        section.querySelector('.export-bar')?.insertAdjacentHTML('afterend',
+          `<div class="error">Monitoramento conclu&iacute;do, mas resumo n&atilde;o foi gerado. Verifique o terminal do servidor.</div>`);
       }
       return;
     }
 
-    if (running) {
+    if (running || finalizado) {
       section.innerHTML = `<div class="empty-state">Executando medi&ccedil;&otilde;es... (${progress.current || 0}/${progress.total || 0})</div>`;
     } else {
       section.innerHTML = '<div class="empty-state">Aguardando in&iacute;cio do monitoramento...</div>';

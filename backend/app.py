@@ -525,9 +525,15 @@ def _monitor_loop(interval: float, n_medicoes: int):
         if i < n_medicoes - 1:
             time.sleep(interval)
 
-    snapshot = _build_snapshot(n_medicoes, interval, medicoes_temp, medicoes_umid,
-                               medicoes_temp_corr, medicoes_umid_corr,
-                               labels_tipo)
+    try:
+        snapshot = _build_snapshot(n_medicoes, interval, medicoes_temp, medicoes_umid,
+                                   medicoes_temp_corr, medicoes_umid_corr,
+                                   labels_tipo)
+    except Exception as e:
+        snapshot = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "instrumentos": {}, "erro": str(e), "n_medicoes": n_medicoes,
+                    "intervalo": interval}
+        print(f"ERRO _build_snapshot: {e}", flush=True)
 
     with lock:
         snapshots.append(snapshot)
@@ -535,6 +541,8 @@ def _monitor_loop(interval: float, n_medicoes: int):
             snapshots[:] = snapshots[-100:]
 
     monitoring = False
+    with lock:
+        monitor_progress["finalizado"] = True
 
 
 def _read_one_raw(device: str, cfg: dict):
@@ -680,7 +688,16 @@ def api_monitor_stop():
 
 @app.route("/api/monitor/status", methods=["GET"])
 def api_monitor_status():
-    return jsonify({"running": monitoring, "progress": dict(monitor_progress)})
+    last = None
+    with lock:
+        if snapshots:
+            last = snapshots[-1]
+    return jsonify({
+        "running": monitoring,
+        "progress": dict(monitor_progress),
+        "finalizado": monitor_progress.get("finalizado", False),
+        "last_snapshot": last,
+    })
 
 
 @app.route("/api/calibracao/<label>", methods=["GET"])
