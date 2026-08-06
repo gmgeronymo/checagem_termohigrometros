@@ -290,7 +290,7 @@ class Simulado(Instrument):
         temp = self._temp_base + random.gauss(0, 0.02)
         umid = self._umid_base + random.gauss(0, 0.1)
         return {
-            "temperature": f"{temp:.3f}",
+            "temperature": f"{temp:.1f}",
             "humidity": f"{umid:.1f}",
             "unit_temp": "°C",
             "unit_umid": "%",

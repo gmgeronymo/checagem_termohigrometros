@@ -1,6 +1,4 @@
 import math
-import csv
-import io
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -285,6 +283,12 @@ def api_snapshots():
         return jsonify(list(snapshots))
 
 
+def _csv_val(v):
+    if v is None or v == "":
+        return ""
+    return str(v).replace(".", ",")
+
+
 @app.route("/api/snapshots/csv", methods=["GET"])
 def api_snapshots_csv():
     with lock:
@@ -298,16 +302,17 @@ def api_snapshots_csv():
     labels = sorted(instrumentos.keys())
     n_med = s.get("n_medicoes", 0)
 
-    output = io.StringIO()
-    writer = csv.writer(output)
+    def _row(*args):
+        return ";".join(str(a) for a in args)
 
-    writer.writerow(["RELATORIO DE CHECAGEM"])
-    writer.writerow(["Timestamp", s.get("timestamp", "")])
-    writer.writerow(["N medicoes", n_med])
-    writer.writerow(["Intervalo (s)", s.get("intervalo", "")])
-    writer.writerow([])
+    lines = []
+    lines.append(_row("RELATORIO DE CHECAGEM"))
+    lines.append(_row("Timestamp", s.get("timestamp", "")))
+    lines.append(_row("N medicoes", n_med))
+    lines.append(_row("Intervalo (s)", _csv_val(s.get("intervalo", ""))))
+    lines.append("")
 
-    writer.writerow(["MEDICOES BRUTAS"])
+    lines.append(_row("MEDICOES BRUTAS"))
     header = ["Medicao"]
     for lb in labels:
         inst = instrumentos[lb]
@@ -315,20 +320,22 @@ def api_snapshots_csv():
             header.append(f"{lb} T bruta")
         if "medicoes_umid" in inst:
             header.append(f"{lb} U bruta")
-    writer.writerow(header)
+    lines.append(_row(*header))
 
     for i in range(n_med):
-        row = [i + 1]
+        row = [str(i + 1)]
         for lb in labels:
             inst = instrumentos[lb]
             if "medicoes_temp" in inst:
-                row.append(inst["medicoes_temp"][i] if i < len(inst["medicoes_temp"]) else "")
+                v = inst["medicoes_temp"][i] if i < len(inst["medicoes_temp"]) else ""
+                row.append(_csv_val(v))
             if "medicoes_umid" in inst:
-                row.append(inst["medicoes_umid"][i] if i < len(inst["medicoes_umid"]) else "")
-        writer.writerow(row)
+                v = inst["medicoes_umid"][i] if i < len(inst["medicoes_umid"]) else ""
+                row.append(_csv_val(v))
+        lines.append(_row(*row))
 
-    writer.writerow([])
-    writer.writerow(["MEDICOES CORRIGIDAS"])
+    lines.append("")
+    lines.append(_row("MEDICOES CORRIGIDAS"))
     header = ["Medicao"]
     for lb in labels:
         inst = instrumentos[lb]
@@ -336,22 +343,23 @@ def api_snapshots_csv():
             header.append(f"{lb} T corr")
         if "medicoes_umid_corr" in inst:
             header.append(f"{lb} U corr")
-    writer.writerow(header)
+    lines.append(_row(*header))
 
     for i in range(n_med):
-        row = [i + 1]
+        row = [str(i + 1)]
         for lb in labels:
             inst = instrumentos[lb]
             if "medicoes_temp_corr" in inst:
-                row.append(inst["medicoes_temp_corr"][i] if i < len(inst["medicoes_temp_corr"]) else "")
+                v = inst["medicoes_temp_corr"][i] if i < len(inst["medicoes_temp_corr"]) else ""
+                row.append(_csv_val(v))
             if "medicoes_umid_corr" in inst:
-                row.append(inst["medicoes_umid_corr"][i] if i < len(inst["medicoes_umid_corr"]) else "")
-        writer.writerow(row)
+                v = inst["medicoes_umid_corr"][i] if i < len(inst["medicoes_umid_corr"]) else ""
+                row.append(_csv_val(v))
+        lines.append(_row(*row))
 
-    writer.writerow([])
-    writer.writerow(["RESUMO ESTATISTICO"])
-    header = ["Instrumento", "Grandeza", "Media", "Desvio Padrao", "u_repet", "u_res", "u_cert", "u_combinada", "U (k=2)", "En"]
-    writer.writerow(header)
+    lines.append("")
+    lines.append(_row("RESUMO ESTATISTICO"))
+    lines.append(_row("Instrumento", "Grandeza", "Media Bruta", "Media Corr", "Desvio Padrao", "u_repet", "u_res", "u_cert", "u_combinada", "U (k=2)", "En"))
 
     with lock:
         ref_temp = references.get("temperatura", "")
@@ -359,29 +367,32 @@ def api_snapshots_csv():
 
     for lb in labels:
         inst = instrumentos[lb]
+        inst_media_bruta_temp = inst.get("media_bruta_temp")
+        inst_media_bruta_umid = inst.get("media_bruta_umid")
         for tipo, grand in [("temperatura", "Temperatura"), ("umidade", "Umidade")]:
             key = f"incerteza_{tipo}"
             if key in inst:
                 u = inst[key]
+                bruta = inst_media_bruta_temp if tipo == "temperatura" else inst_media_bruta_umid
                 en_val = inst.get("en", {}).get(tipo, "")
-                writer.writerow([
+                lines.append(_row(
                     lb, grand,
-                    u.get("media", ""),
-                    u.get("desvio_padrao", ""),
-                    u.get("u_repet", ""),
-                    u.get("u_res", ""),
-                    u.get("u_cert", ""),
-                    u.get("u_combinada", ""),
-                    u.get("U_expandida", ""),
-                    en_val,
-                ])
+                    _csv_val(bruta),
+                    _csv_val(u.get("media")),
+                    _csv_val(u.get("desvio_padrao")),
+                    _csv_val(u.get("u_repet")),
+                    _csv_val(u.get("u_res")),
+                    _csv_val(u.get("u_cert")),
+                    _csv_val(u.get("u_combinada")),
+                    _csv_val(u.get("U_expandida")),
+                    _csv_val(en_val),
+                ))
 
-    writer.writerow([])
-    writer.writerow(["Referencia Temperatura", ref_temp])
-    writer.writerow(["Referencia Umidade", ref_umid])
+    lines.append("")
+    lines.append(_row("Referencia Temperatura", ref_temp))
+    lines.append(_row("Referencia Umidade", ref_umid))
 
-    csv_content = output.getvalue()
-    output.close()
+    csv_content = "\r\n".join(lines) + "\r\n"
 
     return Response(
         csv_content,
