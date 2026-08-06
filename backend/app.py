@@ -41,13 +41,13 @@ def api_ports():
     ports = find_usb_serial_ports(all_ports=show_all)
 
     if not ports:
-        ports = [{
-            "device": "simulado",
-            "description": "Instrumento virtual para testes",
-            "hwid": "",
-            "manufacturer": "",
-            "serial_number": "",
-        }]
+        ports = [
+            {"device": "sim1", "description": "Simulado #1 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
+            {"device": "sim2", "description": "Simulado #2 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
+            {"device": "sim3", "description": "Simulado #3 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
+            {"device": "sim4", "description": "Simulado #4 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
+        ]
+        _seed_calibracoes_teste()
 
     for port in ports:
         device = port["device"]
@@ -651,3 +651,31 @@ def api_delete_calibracao(label):
 @app.route("/api/calibracoes", methods=["GET"])
 def api_list_calibracoes():
     return jsonify(db_list_calibracoes())
+
+
+def _seed_calibracoes_teste():
+    dados = {
+        "CA 101": ("DIMCI 0001/2026", "2026-01-10",
+            [{"indicacao": "20,0", "correcao": "0,0", "incerteza_u": "0,2"},
+             {"indicacao": "23,0", "correcao": "-0,1", "incerteza_u": "0,2"},
+             {"indicacao": "30,0", "correcao": "0,1", "incerteza_u": "0,3"}],
+            [{"indicacao": "30,0", "correcao": "0,5", "incerteza_u": "1,0"},
+             {"indicacao": "50,0", "correcao": "-0,3", "incerteza_u": "1,0"},
+             {"indicacao": "70,0", "correcao": "0,2", "incerteza_u": "1,2"}]),
+        "CA 102": ("DIMCI 0002/2026", "2026-02-15",
+            [{"indicacao": "20,0", "correcao": "0,1", "incerteza_u": "0,2"},
+             {"indicacao": "23,0", "correcao": "0,0", "incerteza_u": "0,2"},
+             {"indicacao": "30,0", "correcao": "-0,1", "incerteza_u": "0,2"}],
+            [{"indicacao": "30,0", "correcao": "-0,5", "incerteza_u": "1,0"},
+             {"indicacao": "50,0", "correcao": "0,2", "incerteza_u": "1,2"},
+             {"indicacao": "70,0", "correcao": "-0,2", "incerteza_u": "1,0"}]),
+        "CA 103": ("DIMCI 0003/2026", "2026-03-20",
+            [{"indicacao": "23,0", "correcao": "0,0", "incerteza_u": "0,1"}],
+            []),
+        "CA 104": ("DIMCI 0004/2026", "2026-04-25",
+            [{"indicacao": "23,0", "correcao": "0,1", "incerteza_u": "0,2"}],
+            [{"indicacao": "50,0", "correcao": "0,0", "incerteza_u": "1,0"}]),
+    }
+    for label, (cert, data_cal, temp, umid) in dados.items():
+        if not get_calibracao(label):
+            save_calibracao(label, cert, data_cal, temp, umid)

@@ -823,7 +823,7 @@ function _renderLiveTable(section, snapshots) {
   }
 
   html += `<div class="table-wrapper"><table class="snapshot-table">`;
-  html += `<thead><tr><th>Med.</th>`;
+  html += `<thead><tr><th>Timestamp</th>`;
   for (const lb of labels) {
     const info = labelTypeMap[lb] || {};
     html += `<th>${lb}<br>T (&#176;C)</th>`;
@@ -835,7 +835,7 @@ function _renderLiveTable(section, snapshots) {
   const filtered = snapshots.filter(s => s.readings);
   for (let i = 0; i < filtered.length; i++) {
     const s = filtered[i];
-    html += `<tr><td class="ts-col">${i + 1}</td>`;
+    html += `<tr><td class="ts-col">${s.timestamp || (i + 1)}</td>`;
     for (const lb of labels) {
       const r = (s.readings || {})[lb];
       const info = labelTypeMap[lb] || {};
