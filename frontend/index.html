@@ -742,7 +742,7 @@ function _renderSummaryTable(section, snapshot) {
   html += `<span style="font-size:0.8rem;color:#888;align-self:center">${snapshot.n_medicoes} medicoes</span></div>`;
 
   html += `<div class="table-wrapper"><table class="snapshot-table">`;
-  html += `<thead><tr><th>Instrumento</th><th>Grandeza</th><th>Media</th><th>u_combinada</th><th>U (k=2)</th><th>En</th></tr></thead><tbody>`;
+  html += `<thead><tr><th>Instrumento</th><th>Grandeza</th><th>M&#233;dia Bruta</th><th>M&#233;dia Corr.</th><th>u_combinada</th><th>U (k=2)</th><th>En</th></tr></thead><tbody>`;
 
   const refStyle = 'font-weight:700;background:#e8eaf6';
 
@@ -756,6 +756,7 @@ function _renderSummaryTable(section, snapshot) {
     html += `<tr>`;
     html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}">${lb}${isRefTemp ? ' Ref T' : ''}${isRefUmid ? ' Ref U' : ''}</td>`;
     html += `<td>T (&#176;C)</td>`;
+    html += `<td>${inst.media_bruta_temp !== undefined ? inst.media_bruta_temp : '-'}</td>`;
     html += `<td>${ut.media !== undefined ? ut.media : '-'}</td>`;
     html += `<td>${ut.u_combinada !== undefined ? ut.u_combinada : '-'}</td>`;
     html += `<td>${ut.U_expandida !== undefined ? ut.U_expandida : '-'}</td>`;
@@ -767,6 +768,7 @@ function _renderSummaryTable(section, snapshot) {
       const uu = inst.incerteza_umid || {};
       html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}"></td>`;
       html += `<td>U (%)</td>`;
+      html += `<td>${inst.media_bruta_umid !== undefined ? inst.media_bruta_umid : '-'}</td>`;
       html += `<td>${uu.media !== undefined ? uu.media : '-'}</td>`;
       html += `<td>${uu.u_combinada !== undefined ? uu.u_combinada : '-'}</td>`;
       html += `<td>${uu.U_expandida !== undefined ? uu.U_expandida : '-'}</td>`;
@@ -806,34 +808,35 @@ function _renderLiveTable(section, snapshots) {
   });
 
   let html = '';
-  html += `<div class="export-bar"><span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} registros</span></div>`;
+  html += `<div class="export-bar"><span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} medicoes</span></div>`;
   if (!labels.length) {
     section.innerHTML = html + '<div class="empty-state">Sem instrumentos com label configurado</div>';
     return;
   }
 
   html += `<div class="table-wrapper"><table class="snapshot-table">`;
-  html += `<thead><tr><th>Timestamp</th>`;
+  html += `<thead><tr><th>Med.</th>`;
   for (const lb of labels) {
     const info = labelTypeMap[lb] || {};
-    const isRefTemp = refTempLabel === lb;
-    const isRefUmid = refUmidLabel === lb;
-
-    html += `<th>${lb}${isRefTemp ? ' Ref T' : ''}<br>T (&#176;C)</th>`;
-    if (info.hasHumidity) html += `<th>${lb}${isRefUmid ? ' Ref U' : ''}<br>U (%)</th>`;
+    html += `<th>${lb}<br>T (&#176;C)</th>`;
+    if (info.hasHumidity) html += `<th>${lb}<br>U (%)</th>`;
   }
   html += `</tr></thead><tbody>`;
 
   const refStyle = 'font-weight:700;background:#e8eaf6';
-  for (const s of snapshots.slice().reverse()) {
-    html += `<tr><td class="ts-col">${s.timestamp}</td>`;
+  const filtered = snapshots.filter(s => s.readings);
+  for (let i = 0; i < filtered.length; i++) {
+    const s = filtered[i];
+    html += `<tr><td class="ts-col">${i + 1}</td>`;
     for (const lb of labels) {
       const r = (s.readings || {})[lb];
       const info = labelTypeMap[lb] || {};
       if (r) {
-        html += `<td${lb === refTempLabel ? ` style="${refStyle}"` : ''}>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
+        const t = r.temperature_raw || r.temperature || '-';
+        html += `<td${lb === refTempLabel ? ` style="${refStyle}"` : ''}>${t}</td>`;
         if (info.hasHumidity) {
-          html += `<td${lb === refUmidLabel ? ` style="${refStyle}"` : ''}>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+          const u = r.humidity_raw || r.humidity || '-';
+          html += `<td${lb === refUmidLabel ? ` style="${refStyle}"` : ''}>${u}</td>`;
         }
       } else {
         html += `<td class="error-cell">-</td>`;

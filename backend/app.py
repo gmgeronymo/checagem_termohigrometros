@@ -407,6 +407,9 @@ def _monitor_loop(interval: float, n_medicoes: int):
         if not monitoring:
             break
 
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        live_snapshot = {"timestamp": ts, "readings": {}}
+
         with ThreadPoolExecutor(max_workers=len(items)) as executor:
             futures = {
                 executor.submit(_read_one_raw, device, cfg): device
@@ -414,9 +417,10 @@ def _monitor_loop(interval: float, n_medicoes: int):
             }
             for future in as_completed(futures):
                 device = futures[future]
+                cfg = assignments.get(device, {})
+                label = cfg.get("label", device)
                 try:
                     label, raw_temp, raw_umid = future.result()
-                    cfg = assignments.get(device, {})
                     modo = cfg.get("modo_correcao", "ponto_fixo")
                     calibracao = get_calibracao(label) if label else None
                     corr = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
@@ -431,6 +435,13 @@ def _monitor_loop(interval: float, n_medicoes: int):
                         medicoes_umid[label].append(raw_umid)
                         medicoes_umid_corr[label].append(u_corr)
 
+                    live_snapshot["readings"][label] = {
+                        "temperature": t_corr,
+                        "humidity": u_corr,
+                        "temperature_raw": raw_temp,
+                        "humidity_raw": raw_umid,
+                    }
+
                     with lock:
                         readings[device] = {
                             "device": device,
@@ -442,7 +453,7 @@ def _monitor_loop(interval: float, n_medicoes: int):
                             "instrument_type": cfg.get("type", ""),
                             "instrument_label": INSTRUMENT_TYPES.get(cfg.get("type", ""), {}).get("label", ""),
                             "status": "ok",
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": ts,
                             "certificado": calibracao.get("certificado", "") if calibracao else "",
                             "has_calibracao": bool(calibracao),
                             **corr,
@@ -452,14 +463,10 @@ def _monitor_loop(interval: float, n_medicoes: int):
 
         with lock:
             monitor_progress["current"] = i + 1
-
-        for device in list(medicoes_temp.keys()):
-            label = assignments.get(device, {}).get("label", device)
-            if label not in medicoes_temp:
-                medicoes_temp[label] = medicoes_temp.get(device, [])
-                medicoes_umid[label] = medicoes_umid.get(device, [])
-                medicoes_temp_corr[label] = medicoes_temp_corr.get(device, [])
-                medicoes_umid_corr[label] = medicoes_umid_corr.get(device, [])
+            if live_snapshot["readings"]:
+                snapshots.append(live_snapshot)
+                if len(snapshots) > 100:
+                    snapshots.pop(0)
 
         if i < n_medicoes - 1:
             time.sleep(interval)
@@ -516,12 +523,18 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
             inst_data["medicoes_temp_corr"] = temps_corr = _to_floats(temps)
             incerteza_temp = calc_incerteza(temps_corr, instr_type, "temperatura", calibracao)
             inst_data["incerteza_temp"] = incerteza_temp
+            raw_floats = _to_floats(temps_raw)
+            if raw_floats:
+                inst_data["media_bruta_temp"] = round(sum(raw_floats) / len(raw_floats), 6)
 
         if umids_raw:
             inst_data["medicoes_umid"] = umids_raw
             inst_data["medicoes_umid_corr"] = umids_corr = _to_floats(umids)
             incerteza_umid = calc_incerteza(umids_corr, instr_type, "umidade", calibracao)
             inst_data["incerteza_umid"] = incerteza_umid
+            raw_floats = _to_floats(umids_raw)
+            if raw_floats:
+                inst_data["media_bruta_umid"] = round(sum(raw_floats) / len(raw_floats), 6)
 
         en = {}
         if ref_temp and label != ref_temp and temps_corr:
