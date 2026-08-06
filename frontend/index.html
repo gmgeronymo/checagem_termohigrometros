@@ -697,21 +697,27 @@ function renderPorts(ports) {
   }
 }
 
-function renderMonitorTable(snapshots) {
+function renderMonitorTable(snapshots, status) {
   try {
     const section = document.getElementById('monitorSection');
+    const running = status?.running;
+    const progress = status?.progress || {};
+
     if (!snapshots || !snapshots.length) {
-      section.innerHTML = '<div class="empty-state">Aguardando leituras... (0 registros)</div>';
+      if (running) {
+        section.innerHTML = `<div class="empty-state">Executando medi&ccedil;&otilde;es... (${progress.current || 0}/${progress.total || 0})</div>`;
+      } else {
+        section.innerHTML = '<div class="empty-state">Aguardando in&iacute;cio do monitoramento...</div>';
+      }
       return;
     }
 
     const last = snapshots[snapshots.length - 1];
-    const instrumentos = last.instrumentos || last.readings || {};
-
     if (last.instrumentos) {
       _renderSummaryTable(section, last);
-    } else {
-      _renderLiveTable(section, snapshots);
+      if (!running) stopTablePolling();
+    } else if (running) {
+      section.innerHTML = `<div class="empty-state">Executando medi&ccedil;&otilde;es... (${progress.current || 0}/${progress.total || 0})</div>`;
     }
   } catch (e) {
     addDebug(`renderTable erro: ${e.message}`, 'err');
@@ -754,9 +760,10 @@ function _renderSummaryTable(section, snapshot) {
     html += `<td>${ut.u_combinada !== undefined ? ut.u_combinada : '-'}</td>`;
     html += `<td>${ut.U_expandida !== undefined ? ut.U_expandida : '-'}</td>`;
     html += `<td>${isRefTemp ? '-' : renderEnCellTd(inst.en?.temperatura)}</td>`;
-    html += `</tr><tr>`;
+    html += `</tr>`;
 
     if (hasHum) {
+      html += `<tr>`;
       const uu = inst.incerteza_umid || {};
       html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}"></td>`;
       html += `<td>U (%)</td>`;
@@ -925,14 +932,13 @@ async function updateMonitorStatus() {
       btnStart.disabled = true;
       btnStop.disabled = false;
       if (!monitorPolling) startPollingReadings();
-      if (!tablePolling) { startTablePolling(); addDebug('tablePolling iniciado', 'ok'); }
+      if (!tablePolling) startTablePolling();
     } else {
       statusEl.textContent = 'Monitoramento: Parado';
       statusEl.style.color = '';
       btnStart.disabled = false;
       btnStop.disabled = true;
       if (monitorPolling) stopPollingReadings();
-      if (tablePolling) { stopTablePolling(); addDebug('tablePolling parado', 'info'); }
     }
   } catch (e) {}
 }
@@ -1012,9 +1018,13 @@ function stopPollingReadings() {
 function startTablePolling() {
   tablePolling = setInterval(async () => {
     try {
-      const resp = await fetch(`${API}/snapshots`);
-      const snaps = await resp.json();
-      renderMonitorTable(snaps);
+      const [snapResp, statusResp] = await Promise.all([
+        fetch(`${API}/snapshots`),
+        fetch(`${API}/monitor/status`)
+      ]);
+      const snaps = await snapResp.json();
+      const status = await statusResp.json();
+      renderMonitorTable(snaps, status);
     } catch (e) {
       addDebug(`tablePolling erro: ${e.message}`, 'err');
     }
