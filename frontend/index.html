@@ -635,7 +635,7 @@ function renderPorts(ports) {
 
     html += `<select data-device="${p.device}" onchange="assignInstrument('${p.device}', this.value)">`;
     html += `<option value="">-- Selecionar --</option>`;
-    html += `<option value="simulado" ${p.assigned_type === 'simulado' ? 'selected' : ''}>Simulado</option>`;
+    if (p.virtual) html += `<option value="simulado" ${p.assigned_type === 'simulado' ? 'selected' : ''}>Simulado</option>`;
     html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
     html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
     html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
@@ -702,6 +702,17 @@ function renderMonitorTable(snapshots, status) {
       if (running) {
         section.querySelector('.export-bar')?.insertAdjacentHTML('afterend',
           `<div style="text-align:center;font-size:0.75rem;color:#888;margin-bottom:0.25rem">Medi&ccedil;&atilde;o ${progress.current || 0} de ${progress.total || 0}</div>`);
+      } else {
+        addDebug('monitor finalizado, aguardando resumo...', 'info');
+        setTimeout(() => {
+          fetch(`${API}/snapshots`).then(r => r.json()).then(s => {
+            const final = s?.length ? s[s.length - 1] : null;
+            if (final && final.instrumentos) {
+              _renderSummaryTable(section, final);
+              stopTablePolling();
+            }
+          }).catch(() => {});
+        }, 2000);
       }
       return;
     }

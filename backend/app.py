@@ -40,10 +40,10 @@ def api_ports():
 
     if not ports:
         ports = [
-            {"device": "sim1", "description": "Simulado #1 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
-            {"device": "sim2", "description": "Simulado #2 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
-            {"device": "sim3", "description": "Simulado #3 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
-            {"device": "sim4", "description": "Simulado #4 - virtual", "hwid": "", "manufacturer": "", "serial_number": ""},
+            {"device": "sim1", "description": "Simulado #1 - virtual", "hwid": "", "manufacturer": "", "serial_number": "", "virtual": True},
+            {"device": "sim2", "description": "Simulado #2 - virtual", "hwid": "", "manufacturer": "", "serial_number": "", "virtual": True},
+            {"device": "sim3", "description": "Simulado #3 - virtual", "hwid": "", "manufacturer": "", "serial_number": "", "virtual": True},
+            {"device": "sim4", "description": "Simulado #4 - virtual", "hwid": "", "manufacturer": "", "serial_number": "", "virtual": True},
         ]
         _seed_calibracoes_teste()
 
