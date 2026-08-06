@@ -1,3 +1,4 @@
+import random
 import traceback
 import time
 import serial
@@ -269,7 +270,35 @@ class HygroPalm(Instrument):
             ser.close()
 
 
+class Simulado(Instrument):
+    BAUD = 0
+    BYTESIZE = 0
+    PARITY = "N"
+    STOPBITS = 0
+
+    def __init__(self):
+        self._temp_base = 23.0 + random.uniform(-0.5, 0.5)
+        self._umid_base = 50.0 + random.uniform(-2.0, 2.0)
+
+    def init(self, ser):
+        pass
+
+    def _do_debug(self, ser):
+        return {"simulado": True, "temp_base": self._temp_base, "umid_base": self._umid_base}
+
+    def read(self, port: str = "", timeout: int = 2) -> dict:
+        temp = self._temp_base + random.gauss(0, 0.02)
+        umid = self._umid_base + random.gauss(0, 0.1)
+        return {
+            "temperature": f"{temp:.3f}",
+            "humidity": f"{umid:.1f}",
+            "unit_temp": "°C",
+            "unit_umid": "%",
+        }
+
+
 INSTRUMENT_TYPES = {
+    "simulado": {"label": "Simulado", "class": Simulado, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
     "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A, "has_humidity": False, "res_temp": 0.001},
     "sato": {"label": "Sato Novo", "class": Sato, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
     "sato_old": {"label": "Sato Antigo", "class": SatoOld, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
