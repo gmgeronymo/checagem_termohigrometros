@@ -582,6 +582,11 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
         umids_raw = medicoes_umid.get(label, [])
         umids = medicoes_umid_corr.get(label, [])
 
+        temps_corr = []
+        umids_corr = []
+        incerteza_temp = {}
+        incerteza_umid = {}
+
         if temps_raw:
             inst_data["medicoes_temp"] = temps_raw
             inst_data["medicoes_temp_corr"] = temps_corr = _to_floats(temps)
@@ -619,7 +624,6 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
                         _to_floats(inst_data["medicoes_umid_corr_pf"]),
                         instr_type, "umidade", calibracao, modo="ponto_fixo")
                     inst_data["umid_coeff_pf"] = pf
-                inst_data["media_bruta_umid"] = round(sum(raw_floats) / len(raw_floats), 6)
 
         en = {}
         if ref_temp and label != ref_temp and temps_corr:
