@@ -635,11 +635,14 @@ function renderPorts(ports) {
 
     html += `<select data-device="${p.device}" onchange="assignInstrument('${p.device}', this.value)">`;
     html += `<option value="">-- Selecionar --</option>`;
-    if (p.virtual) html += `<option value="simulado" ${p.assigned_type === 'simulado' ? 'selected' : ''}>Simulado</option>`;
-    html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
-    html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
-    html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
-    html += `<option value="hygropalm" ${p.assigned_type === 'hygropalm' ? 'selected' : ''}>HygroPalm</option>`;
+    if (p.virtual) {
+      html += `<option value="simulado" ${p.assigned_type === 'simulado' ? 'selected' : ''}>Simulado</option>`;
+    } else {
+      html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
+      html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
+      html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
+      html += `<option value="hygropalm" ${p.assigned_type === 'hygropalm' ? 'selected' : ''}>HygroPalm</option>`;
+    }
     html += `</select>`;
 
     html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;
