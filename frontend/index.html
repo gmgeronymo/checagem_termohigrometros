@@ -431,19 +431,6 @@ async function assignInstrument(device, type) {
   }
 }
 
-async function setModoCorrecao(device, modo) {
-  addDebug(`POST /api/modo_correcao device=${device} modo=${modo}`);
-  try {
-    await fetch(`${API}/modo_correcao`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device, modo })
-    });
-  } catch (e) {
-    addDebug(`modo_correcao ERRO: ${e.message}`, 'err');
-  }
-}
-
 async function updateLabel(device) {
   const escaped = CSS.escape(device);
   const labelInput = document.getElementById(`label-${escaped}`);
@@ -584,13 +571,14 @@ function renderReading(device, data) {
     if (tempCorr) {
       html += `<span class="value" style="font-size:1.8rem">${data.temperature}</span><span class="unit">${unitTemp}</span>`;
       html += `<br><span style="font-size:0.7rem;color:#888">Bruta: ${tempRaw} ${unitTemp}</span>`;
-      if (data.temperature_ponto_fixo) {
-        html += `<br><span style="font-size:0.65rem;color:#aaa">C(${data.temperature_ponto_fixo}\u00B0C) = ${(parseFloat(data.temperature) - parseFloat(tempRaw)).toFixed(3)}</span>`;
-      } else if (data.temperature_coeff_a !== undefined) {
+      if (data.temperature_coeff_a !== undefined) {
         const a = data.temperature_coeff_a;
         const b = data.temperature_coeff_b;
         const signB = b >= 0 ? '+' : '';
         html += `<br><span style="font-size:0.65rem;color:#aaa">T\u2091 = ${a}\u00B7T + ${signB}${b}</span>`;
+      }
+      if (data.temperature_corrected_pf !== undefined) {
+        html += `<br><span style="font-size:0.65rem;color:#888">PF(${data.temperature_ponto_fixo || '23,0'}\u00B0C): ${data.temperature_corrected_pf} ${unitTemp}</span>`;
       }
     } else {
       html += `<span class="value">${data.temperature}</span><span class="unit">${unitTemp}</span>`;
@@ -607,13 +595,14 @@ function renderReading(device, data) {
       if (umidCorr) {
         html += `<span class="value" style="font-size:1.8rem">${data.humidity}</span><span class="unit">${unitUmid}</span>`;
         html += `<br><span style="font-size:0.7rem;color:#888">Bruta: ${umidRaw} ${unitUmid}</span>`;
-        if (data.humidity_ponto_fixo) {
-          html += `<br><span style="font-size:0.65rem;color:#aaa">C(${data.humidity_ponto_fixo}%) = ${(parseFloat(data.humidity) - parseFloat(umidRaw)).toFixed(3)}</span>`;
-        } else if (data.humidity_coeff_a !== undefined) {
+        if (data.humidity_coeff_a !== undefined) {
           const a = data.humidity_coeff_a;
           const b = data.humidity_coeff_b;
           const signB = b >= 0 ? '+' : '';
           html += `<br><span style="font-size:0.65rem;color:#aaa">U\u1d63 = ${a}\u00B7U + ${signB}${b}</span>`;
+        }
+        if (data.humidity_corrected_pf !== undefined) {
+          html += `<br><span style="font-size:0.65rem;color:#888">PF(${data.humidity_ponto_fixo || '50,0'}%): ${data.humidity_corrected_pf} ${unitUmid}</span>`;
         }
       } else {
         html += `<span class="value">${data.humidity}</span><span class="unit">${unitUmid}</span>`;
@@ -651,11 +640,6 @@ function renderPorts(ports) {
     html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
     html += `<option value="sato_old" ${p.assigned_type === 'sato_old' ? 'selected' : ''}>Sato Antigo</option>`;
     html += `<option value="hygropalm" ${p.assigned_type === 'hygropalm' ? 'selected' : ''}>HygroPalm</option>`;
-    html += `</select>`;
-
-    html += `<select data-modo-device="${p.device}" onchange="setModoCorrecao('${p.device}', this.value)" style="font-size:0.8rem">`;
-    html += `<option value="linear" ${p.modo_correcao === 'linear' ? 'selected' : ''}>Eq. Linear</option>`;
-    html += `<option value="ponto_fixo" ${p.modo_correcao !== 'linear' ? 'selected' : ''}>Ponto Fixo</option>`;
     html += `</select>`;
 
     html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;

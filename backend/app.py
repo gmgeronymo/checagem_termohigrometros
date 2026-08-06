@@ -10,7 +10,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes, get_incerteza_u
-from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes, calc_incerteza
+from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes, calc_incerteza, _correcao_ponto_fixo
 from backend.serial_utils import find_usb_serial_ports
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
@@ -53,7 +53,6 @@ def api_ports():
         instr_type = cfg.get("type", "")
         port["assigned_type"] = instr_type
         port["assigned_label"] = cfg.get("label", "")
-        port["modo_correcao"] = cfg.get("modo_correcao", "ponto_fixo")
         port["instrument_label"] = (
             INSTRUMENT_TYPES[instr_type]["label"]
             if instr_type in INSTRUMENT_TYPES
@@ -87,8 +86,7 @@ def api_assign():
             readings.pop(device, None)
         else:
             existing = assignments.get(device, {})
-            modo = data.get("modo", existing.get("modo_correcao", "ponto_fixo"))
-            assignments[device] = {"type": instr_type, "label": label, "modo_correcao": modo}
+            assignments[device] = {"type": instr_type, "label": label}
 
     return jsonify({"status": "ok", "device": device, "type": instr_type, "label": label})
 
@@ -110,26 +108,6 @@ def api_label():
     return jsonify({"error": "dispositivo nao configurado"}), 400
 
 
-@app.route("/api/modo_correcao", methods=["POST"])
-def api_modo_correcao():
-    data = request.get_json()
-    device = data.get("device")
-    modo = data.get("modo", "ponto_fixo")
-
-    if not device:
-        return jsonify({"error": "device e obrigatorio"}), 400
-
-    if modo not in ("linear", "ponto_fixo"):
-        return jsonify({"error": "modo invalido"}), 400
-
-    with lock:
-        if device in assignments:
-            assignments[device]["modo_correcao"] = modo
-            return jsonify({"status": "ok", "device": device, "modo_correcao": modo})
-
-    return jsonify({"error": "dispositivo nao configurado"}), 400
-
-
 @app.route("/api/read", methods=["POST"])
 def api_read():
     data = request.get_json()
@@ -143,7 +121,6 @@ def api_read():
 
     instr_type = cfg.get("type", "")
     label = cfg.get("label", "")
-    modo = cfg.get("modo_correcao", "ponto_fixo")
     if not instr_type:
         return jsonify({"error": "dispositivo nao configurado"}), 400
 
@@ -172,7 +149,7 @@ def api_read():
     if label:
         calibracao = get_calibracao(label)
 
-    correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
+    correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao)
     result.update(correcoes)
 
     if calibracao:
@@ -335,7 +312,7 @@ def api_snapshots_csv():
         lines.append(_row(*row))
 
     lines.append("")
-    lines.append(_row("MEDICOES CORRIGIDAS"))
+    lines.append(_row("MEDICOES CORRIGIDAS (Eq. Linear)"))
     header = ["Medicao"]
     for lb in labels:
         inst = instrumentos[lb]
@@ -358,8 +335,31 @@ def api_snapshots_csv():
         lines.append(_row(*row))
 
     lines.append("")
-    lines.append(_row("RESUMO ESTATISTICO"))
-    lines.append(_row("Instrumento", "Grandeza", "Media Bruta", "Media Corr", "Desvio Padrao", "u_repet", "u_res", "u_cert", "u_combinada", "U (k=2)", "En"))
+    lines.append(_row("MEDICOES CORRIGIDAS (Ponto Fixo)"))
+    header = ["Medicao"]
+    for lb in labels:
+        inst = instrumentos[lb]
+        if "medicoes_temp_corr_pf" in inst:
+            header.append(f"{lb} T corr PF")
+        if "medicoes_umid_corr_pf" in inst:
+            header.append(f"{lb} U corr PF")
+    lines.append(_row(*header))
+
+    for i in range(n_med):
+        row = [str(i + 1)]
+        for lb in labels:
+            inst = instrumentos[lb]
+            if "medicoes_temp_corr_pf" in inst:
+                v = inst["medicoes_temp_corr_pf"][i] if i < len(inst["medicoes_temp_corr_pf"]) else ""
+                row.append(_csv_val(v))
+            if "medicoes_umid_corr_pf" in inst:
+                v = inst["medicoes_umid_corr_pf"][i] if i < len(inst["medicoes_umid_corr_pf"]) else ""
+                row.append(_csv_val(v))
+        lines.append(_row(*row))
+
+    lines.append("")
+    lines.append(_row("RESUMO ESTATISTICO (Eq. Linear)"))
+    lines.append(_row("Instrumento", "Grandeza", "Media Bruta", "Media Corr", "Desvio Padrao", "u_repet", "u_res", "u_corr", "u_cert", "u_combinada", "U (k=2)", "En"))
 
     with lock:
         ref_temp = references.get("temperatura", "")
@@ -382,11 +382,41 @@ def api_snapshots_csv():
                     _csv_val(u.get("desvio_padrao")),
                     _csv_val(u.get("u_repet")),
                     _csv_val(u.get("u_res")),
+                    _csv_val(u.get("u_corr")),
                     _csv_val(u.get("u_cert")),
                     _csv_val(u.get("u_combinada")),
                     _csv_val(u.get("U_expandida")),
                     _csv_val(en_val),
                 ))
+
+    pf_keys = [("incerteza_temp_pf", "temperatura", "Temperatura"),
+               ("incerteza_umid_pf", "umidade", "Umidade")]
+    if any(any(k in inst for k, _, _ in pf_keys) for inst in instrumentos.values()):
+        lines.append("")
+        lines.append(_row("RESUMO ESTATISTICO (Ponto Fixo)"))
+        lines.append(_row("Instrumento", "Grandeza", "Media Bruta", "Media Corr", "Desvio Padrao", "u_repet", "u_res", "u_corr", "u_cert", "u_combinada", "U (k=2)", "En"))
+        for lb in labels:
+            inst = instrumentos[lb]
+            inst_media_bruta_temp = inst.get("media_bruta_temp")
+            inst_media_bruta_umid = inst.get("media_bruta_umid")
+            for key, tipo, grand in pf_keys:
+                if key in inst:
+                    u = inst[key]
+                    bruta = inst_media_bruta_temp if tipo == "temperatura" else inst_media_bruta_umid
+                    en_val = inst.get("en", {}).get(tipo, "")
+                    lines.append(_row(
+                        lb, grand,
+                        _csv_val(bruta),
+                        _csv_val(u.get("media")),
+                        _csv_val(u.get("desvio_padrao")),
+                        _csv_val(u.get("u_repet")),
+                        _csv_val(u.get("u_res")),
+                        _csv_val(u.get("u_corr")),
+                        _csv_val(u.get("u_cert")),
+                        _csv_val(u.get("u_combinada")),
+                        _csv_val(u.get("U_expandida")),
+                        _csv_val(en_val),
+                    ))
 
     lines.append("")
     lines.append(_row("Referencia Temperatura", ref_temp))
@@ -413,12 +443,10 @@ def _monitor_loop(interval: float, n_medicoes: int):
     medicoes_temp_corr = {}
     medicoes_umid_corr = {}
     labels_tipo = {}    # label -> instr_type
-    labels_modo = {}    # label -> modo_correcao
 
     for device, cfg in items:
         label = cfg.get("label", device)
         labels_tipo[label] = cfg.get("type", "")
-        labels_modo[label] = cfg.get("modo_correcao", "ponto_fixo")
         medicoes_temp[label] = []
         medicoes_umid[label] = []
         medicoes_temp_corr[label] = []
@@ -442,9 +470,8 @@ def _monitor_loop(interval: float, n_medicoes: int):
                 label = cfg.get("label", device)
                 try:
                     label, raw_temp, raw_umid = future.result()
-                    modo = cfg.get("modo_correcao", "ponto_fixo")
                     calibracao = get_calibracao(label) if label else None
-                    corr = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
+                    corr = aplicar_correcoes(raw_temp, raw_umid, calibracao)
 
                     t_corr = corr.get("temperature", raw_temp or "")
                     u_corr = corr.get("humidity", raw_umid or "")
@@ -494,7 +521,7 @@ def _monitor_loop(interval: float, n_medicoes: int):
 
     snapshot = _build_snapshot(n_medicoes, interval, medicoes_temp, medicoes_umid,
                                medicoes_temp_corr, medicoes_umid_corr,
-                               labels_tipo, labels_modo)
+                               labels_tipo)
 
     with lock:
         snapshots.append(snapshot)
@@ -514,7 +541,7 @@ def _read_one_raw(device: str, cfg: dict):
 
 def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
                     medicoes_temp_corr, medicoes_umid_corr,
-                    labels_tipo, labels_modo):
+                    labels_tipo):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     snapshot = {
         "timestamp": ts,
@@ -529,7 +556,6 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
 
     for label in labels_tipo:
         instr_type = labels_tipo[label]
-        modo = labels_modo[label]
         calibracao = get_calibracao(label) if label else None
 
         inst_data = {"tipo": instr_type}
@@ -537,10 +563,10 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
         inst_data["res_temp"] = info.get("res_temp", 0.1)
         inst_data["res_umid"] = info.get("res_umid", 0.1)
 
-        temps = medicoes_temp_corr.get(label, [])
         temps_raw = medicoes_temp.get(label, [])
-        umids = medicoes_umid_corr.get(label, [])
+        temps = medicoes_temp_corr.get(label, [])
         umids_raw = medicoes_umid.get(label, [])
+        umids = medicoes_umid_corr.get(label, [])
 
         if temps_raw:
             inst_data["medicoes_temp"] = temps_raw
@@ -550,6 +576,15 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
             raw_floats = _to_floats(temps_raw)
             if raw_floats:
                 inst_data["media_bruta_temp"] = round(sum(raw_floats) / len(raw_floats), 6)
+            if calibracao:
+                pf = _correcao_ponto_fixo(calibracao.get("temperatura", []), 23.0)
+                if pf:
+                    c = pf["correcao"]
+                    inst_data["medicoes_temp_corr_pf"] = [f"{float(r) + c:.6f}" for r in temps_raw]
+                    inst_data["incerteza_temp_pf"] = calc_incerteza(
+                        _to_floats(inst_data["medicoes_temp_corr_pf"]),
+                        instr_type, "temperatura", calibracao)
+                    inst_data["temp_coeff_pf"] = pf
 
         if umids_raw:
             inst_data["medicoes_umid"] = umids_raw
@@ -558,6 +593,16 @@ def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
             inst_data["incerteza_umid"] = incerteza_umid
             raw_floats = _to_floats(umids_raw)
             if raw_floats:
+                inst_data["media_bruta_umid"] = round(sum(raw_floats) / len(raw_floats), 6)
+            if calibracao:
+                pf = _correcao_ponto_fixo(calibracao.get("umidade", []), 50.0)
+                if pf:
+                    c = pf["correcao"]
+                    inst_data["medicoes_umid_corr_pf"] = [f"{float(r) + c:.6f}" for r in umids_raw]
+                    inst_data["incerteza_umid_pf"] = calc_incerteza(
+                        _to_floats(inst_data["medicoes_umid_corr_pf"]),
+                        instr_type, "umidade", calibracao)
+                    inst_data["umid_coeff_pf"] = pf
                 inst_data["media_bruta_umid"] = round(sum(raw_floats) / len(raw_floats), 6)
 
         en = {}

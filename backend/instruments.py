@@ -316,25 +316,6 @@ def parse_decimal(value: str) -> float:
     return float(value.replace(",", "."))
 
 
-def _least_squares(pontos: list[dict]) -> tuple[float, float] | None:
-    if not pontos:
-        return None
-    xs = [parse_decimal(p["indicacao"]) for p in pontos]
-    cs = [parse_decimal(p["correcao"]) for p in pontos]
-    ys = [x + c for x, c in zip(xs, cs)]
-    n = len(xs)
-    sum_x = sum(xs)
-    sum_y = sum(ys)
-    sum_xy = sum(x * y for x, y in zip(xs, ys))
-    sum_x2 = sum(x * x for x in xs)
-    denom = n * sum_x2 - sum_x * sum_x
-    if denom == 0:
-        return None
-    a = (n * sum_xy - sum_x * sum_y) / denom
-    b = (sum_y - a * sum_x) / n
-    return a, b
-
-
 def _decimal_places(value: str) -> int:
     if "." in value:
         return len(value.split(".")[1])
@@ -362,8 +343,41 @@ def _correcao_ponto_fixo(pontos: list[dict], valor_referencia: float) -> dict | 
     }
 
 
+def _least_squares(pontos: list[dict]) -> dict | None:
+    if len(pontos) < 2:
+        return None
+    xs = [parse_decimal(p["indicacao"]) for p in pontos]
+    cs = [parse_decimal(p["correcao"]) for p in pontos]
+    ys = [x + c for x, c in zip(xs, cs)]
+    n = len(xs)
+    mean_x = sum(xs) / n
+    sum_x = sum(xs)
+    sum_y = sum(ys)
+    sum_xy = sum(x * y for x, y in zip(xs, ys))
+    sum_x2 = sum(x * x for x in xs)
+    denom = n * sum_x2 - sum_x * sum_x
+    if denom == 0:
+        return None
+    a = (n * sum_xy - sum_x * sum_y) / denom
+    b = (sum_y - a * sum_x) / n
+
+    residuals = [ys[i] - (a * xs[i] + b) for i in range(n)]
+    sse = sum(r**2 for r in residuals)
+    s_res = (sse / (n - 2)) ** 0.5 if n > 2 else 0
+    ssx = sum_x2 - sum_x**2 / n
+
+    return {"a": a, "b": b, "s_res": s_res, "n": n, "mean_x": mean_x, "ssx": ssx}
+
+
+def _u_correcao(reg: dict | None, x: float) -> float:
+    if reg is None or reg["ssx"] == 0:
+        return 0
+    n = reg["n"]
+    return reg["s_res"] * (1 / n + (x - reg["mean_x"])**2 / reg["ssx"]) ** 0.5
+
+
 def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
-                       calibracao: dict | None, modo: str = "ponto_fixo") -> dict:
+                       calibracao: dict | None) -> dict:
     result = {}
     if raw_temperature is not None and raw_temperature != "":
         raw_t = float(raw_temperature)
@@ -372,22 +386,18 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
         result["temperature"] = raw_temperature
         result["temperature_corrected"] = None
         if calibracao and calibracao.get("temperatura"):
-            if modo == "ponto_fixo":
-                pf = _correcao_ponto_fixo(calibracao["temperatura"], 23.0)
-                if pf:
-                    corrected = raw_t + pf["correcao"]
-                    result["temperature"] = f"{corrected:.{ndigits}f}"
-                    result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
-                    result["temperature_ponto_fixo"] = pf["indicacao"]
-            else:
-                coeff = _least_squares(calibracao["temperatura"])
-                if coeff:
-                    a, b = coeff
-                    corrected = a * raw_t + b
-                    result["temperature"] = f"{corrected:.{ndigits}f}"
-                    result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
-                    result["temperature_coeff_a"] = round(a, 6)
-                    result["temperature_coeff_b"] = round(b, 6)
+            reg = _least_squares(calibracao["temperatura"])
+            if reg:
+                a, b = reg["a"], reg["b"]
+                corrected = a * raw_t + b
+                result["temperature"] = f"{corrected:.{ndigits}f}"
+                result["temperature_corrected"] = f"{corrected:.{ndigits}f}"
+                result["temperature_coeff_a"] = round(a, 6)
+                result["temperature_coeff_b"] = round(b, 6)
+            pf = _correcao_ponto_fixo(calibracao["temperatura"], 23.0)
+            if pf:
+                result["temperature_corrected_pf"] = f"{raw_t + pf['correcao']:.{ndigits}f}"
+                result["temperature_ponto_fixo"] = pf["indicacao"]
 
     if raw_humidity is not None and raw_humidity != "":
         raw_u = float(raw_humidity)
@@ -396,22 +406,18 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
         result["humidity"] = raw_humidity
         result["humidity_corrected"] = None
         if calibracao and calibracao.get("umidade"):
-            if modo == "ponto_fixo":
-                pf = _correcao_ponto_fixo(calibracao["umidade"], 50.0)
-                if pf:
-                    corrected = raw_u + pf["correcao"]
-                    result["humidity"] = f"{corrected:.{ndigits}f}"
-                    result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
-                    result["humidity_ponto_fixo"] = pf["indicacao"]
-            else:
-                coeff = _least_squares(calibracao["umidade"])
-                if coeff:
-                    a, b = coeff
-                    corrected = a * raw_u + b
-                    result["humidity"] = f"{corrected:.{ndigits}f}"
-                    result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
-                    result["humidity_coeff_a"] = round(a, 6)
-                    result["humidity_coeff_b"] = round(b, 6)
+            reg = _least_squares(calibracao["umidade"])
+            if reg:
+                a, b = reg["a"], reg["b"]
+                corrected = a * raw_u + b
+                result["humidity"] = f"{corrected:.{ndigits}f}"
+                result["humidity_corrected"] = f"{corrected:.{ndigits}f}"
+                result["humidity_coeff_a"] = round(a, 6)
+                result["humidity_coeff_b"] = round(b, 6)
+            pf = _correcao_ponto_fixo(calibracao["umidade"], 50.0)
+            if pf:
+                result["humidity_corrected_pf"] = f"{raw_u + pf['correcao']:.{ndigits}f}"
+                result["humidity_ponto_fixo"] = pf["indicacao"]
 
     return result
 
@@ -440,8 +446,16 @@ def calc_incerteza(medicoes: list[float], instr_type: str, tipo: str,
         if pontos:
             u_cert = parse_decimal(pontos[0]["incerteza_u"]) / k
 
-    componentes = {"u_repet": round(u_repet, 8), "u_res": round(u_res, 8)}
-    sum_sq = u_repet**2 + u_res**2
+    u_corr = 0
+    if calibracao:
+        pontos = calibracao.get(tipo, [])
+        if len(pontos) >= 2:
+            reg = _least_squares(pontos)
+            if reg:
+                u_corr = _u_correcao(reg, mean)
+
+    componentes = {"u_repet": round(u_repet, 8), "u_res": round(u_res, 8), "u_corr": round(u_corr, 8)}
+    sum_sq = u_repet**2 + u_res**2 + u_corr**2
     if u_cert is not None:
         componentes["u_cert"] = round(u_cert, 8)
         sum_sq += u_cert**2
