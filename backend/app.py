@@ -39,6 +39,16 @@ def index():
 def api_ports():
     show_all = request.args.get("all", "0") == "1"
     ports = find_usb_serial_ports(all_ports=show_all)
+
+    if not ports:
+        ports = [{
+            "device": "simulado",
+            "description": "Instrumento virtual para testes",
+            "hwid": "",
+            "manufacturer": "",
+            "serial_number": "",
+        }]
+
     for port in ports:
         device = port["device"]
         cfg = assignments.get(device, {})
