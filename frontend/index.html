@@ -703,21 +703,28 @@ function renderMonitorTable(snapshots, status) {
     const running = status?.running;
     const progress = status?.progress || {};
 
-    if (!snapshots || !snapshots.length) {
+    const last = snapshots?.length ? snapshots[snapshots.length - 1] : null;
+
+    if (last && last.instrumentos) {
+      _renderSummaryTable(section, last);
+      if (!running) stopTablePolling();
+      return;
+    }
+
+    const liveSnaps = (snapshots || []).filter(s => s.readings);
+    if (liveSnaps.length) {
+      _renderLiveTable(section, liveSnaps);
       if (running) {
-        section.innerHTML = `<div class="empty-state">Executando medi&ccedil;&otilde;es... (${progress.current || 0}/${progress.total || 0})</div>`;
-      } else {
-        section.innerHTML = '<div class="empty-state">Aguardando in&iacute;cio do monitoramento...</div>';
+        section.querySelector('.export-bar')?.insertAdjacentHTML('afterend',
+          `<div style="text-align:center;font-size:0.75rem;color:#888;margin-bottom:0.25rem">Medi&ccedil;&atilde;o ${progress.current || 0} de ${progress.total || 0}</div>`);
       }
       return;
     }
 
-    const last = snapshots[snapshots.length - 1];
-    if (last.instrumentos) {
-      _renderSummaryTable(section, last);
-      if (!running) stopTablePolling();
-    } else if (running) {
+    if (running) {
       section.innerHTML = `<div class="empty-state">Executando medi&ccedil;&otilde;es... (${progress.current || 0}/${progress.total || 0})</div>`;
+    } else {
+      section.innerHTML = '<div class="empty-state">Aguardando in&iacute;cio do monitoramento...</div>';
     }
   } catch (e) {
     addDebug(`renderTable erro: ${e.message}`, 'err');
@@ -991,6 +998,7 @@ function startPollingReadings() {
     try {
       const resp = await fetch(`${API}/ports`);
       const ports = await resp.json();
+      updateMonitorStatus();
       for (const p of ports) {
         if (p.last_reading) {
           const el = document.getElementById(`reading-${CSS.escape(p.device)}`);
