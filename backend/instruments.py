@@ -270,10 +270,10 @@ class HygroPalm(Instrument):
 
 
 INSTRUMENT_TYPES = {
-    "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A, "has_humidity": False},
-    "sato": {"label": "Sato Novo", "class": Sato, "has_humidity": True},
-    "sato_old": {"label": "Sato Antigo", "class": SatoOld, "has_humidity": True},
-    "hygropalm": {"label": "HygroPalm", "class": HygroPalm, "has_humidity": True},
+    "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A, "has_humidity": False, "res_temp": 0.001},
+    "sato": {"label": "Sato Novo", "class": Sato, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
+    "sato_old": {"label": "Sato Antigo", "class": SatoOld, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
+    "hygropalm": {"label": "HygroPalm", "class": HygroPalm, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
 }
 
 
@@ -385,3 +385,44 @@ def aplicar_correcoes(raw_temperature: str | None, raw_humidity: str | None,
                     result["humidity_coeff_b"] = round(b, 6)
 
     return result
+
+
+def calc_incerteza(medicoes: list[float], instr_type: str, tipo: str,
+                   calibracao: dict | None, k: float = 2.0) -> dict:
+    n = len(medicoes)
+    if n < 2:
+        return {}
+
+    mean = sum(medicoes) / n
+    variance = sum((x - mean) ** 2 for x in medicoes) / (n - 1)
+    desvio = variance ** 0.5
+    u_repet = desvio / (n ** 0.5)
+
+    info = INSTRUMENT_TYPES.get(instr_type, {})
+    if tipo == "temperatura":
+        resolucao = info.get("res_temp", 0.1)
+    else:
+        resolucao = info.get("res_umid", 0.1)
+    u_res = resolucao / (12 ** 0.5)
+
+    u_cert = None
+    if calibracao:
+        pontos = calibracao.get(tipo, [])
+        if pontos:
+            u_cert = parse_decimal(pontos[0]["incerteza_u"]) / k
+
+    componentes = {"u_repet": round(u_repet, 8), "u_res": round(u_res, 8)}
+    sum_sq = u_repet**2 + u_res**2
+    if u_cert is not None:
+        componentes["u_cert"] = round(u_cert, 8)
+        sum_sq += u_cert**2
+
+    u_combinada = sum_sq ** 0.5
+    return {
+        "media": round(mean, 6),
+        "desvio_padrao": round(desvio, 6),
+        **componentes,
+        "u_combinada": round(u_combinada, 6),
+        "U_expandida": round(k * u_combinada, 6),
+        "k": k,
+    }

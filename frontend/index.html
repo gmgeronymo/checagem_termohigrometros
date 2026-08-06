@@ -109,10 +109,10 @@ input.cal-input-wide { width: 100%; max-width: 280px; }
     <div class="section-header">
       <h2>Monitoramento</h2>
       <div class="monitor-bar">
-        <label style="font-size:0.85rem">Leituras:</label>
-        <input type="number" id="monitorNReadings" value="10" min="1" style="width:60px">
+        <label style="font-size:0.85rem">Medicoes:</label>
+        <input type="number" id="monitorNMedicoes" value="10" min="1" style="width:60px">
         <label style="font-size:0.85rem">Intervalo (s):</label>
-        <input type="number" id="monitorInterval" value="20" min="1" style="width:60px">
+        <input type="number" id="monitorInterval" value="30" min="1" style="width:60px">
         <button class="btn btn-success" onclick="startMonitor()" id="btnStart">Iniciar</button>
         <button class="btn btn-danger" onclick="stopMonitor()" id="btnStop">Parar</button>
       </div>
@@ -700,17 +700,91 @@ function renderPorts(ports) {
 function renderMonitorTable(snapshots) {
   try {
     const section = document.getElementById('monitorSection');
-  if (!snapshots || !snapshots.length) {
-    section.innerHTML = '<div class="empty-state">Aguardando leituras... (0 registros)</div>';
-    return;
+    if (!snapshots || !snapshots.length) {
+      section.innerHTML = '<div class="empty-state">Aguardando leituras... (0 registros)</div>';
+      return;
+    }
+
+    const last = snapshots[snapshots.length - 1];
+    const instrumentos = last.instrumentos || last.readings || {};
+
+    if (last.instrumentos) {
+      _renderSummaryTable(section, last);
+    } else {
+      _renderLiveTable(section, snapshots);
+    }
+  } catch (e) {
+    addDebug(`renderTable erro: ${e.message}`, 'err');
+  }
+}
+
+function _renderSummaryTable(section, snapshot) {
+  const refTempLabel = globalRefs.temperatura || '';
+  const refUmidLabel = globalRefs.umidade || '';
+  const instrumentos = snapshot.instrumentos || {};
+  const labels = Object.keys(instrumentos).sort((a, b) => {
+    const aRef = a === refTempLabel || a === refUmidLabel;
+    const bRef = b === refTempLabel || b === refUmidLabel;
+    if (aRef && !bRef) return -1;
+    if (!aRef && bRef) return 1;
+    if (a === refTempLabel && b !== refTempLabel) return -1;
+    if (b === refTempLabel && a !== refTempLabel) return 1;
+    return a.localeCompare(b);
+  });
+
+  let html = `<div class="export-bar"><button class="btn btn-outline" onclick="exportCSV()">Exportar Planilha</button>`;
+  html += `<span style="font-size:0.8rem;color:#888;align-self:center">${snapshot.n_medicoes} medicoes</span></div>`;
+
+  html += `<div class="table-wrapper"><table class="snapshot-table">`;
+  html += `<thead><tr><th>Instrumento</th><th>Grandeza</th><th>Media</th><th>u_combinada</th><th>U (k=2)</th><th>En</th></tr></thead><tbody>`;
+
+  const refStyle = 'font-weight:700;background:#e8eaf6';
+
+  for (const lb of labels) {
+    const inst = instrumentos[lb];
+    const isRefTemp = refTempLabel === lb;
+    const isRefUmid = refUmidLabel === lb;
+    const hasHum = labelTypeMap[lb]?.hasHumidity !== false;
+
+    const ut = inst.incerteza_temp || {};
+    html += `<tr>`;
+    html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}">${lb}${isRefTemp ? ' Ref T' : ''}${isRefUmid ? ' Ref U' : ''}</td>`;
+    html += `<td>T (&#176;C)</td>`;
+    html += `<td>${ut.media !== undefined ? ut.media : '-'}</td>`;
+    html += `<td>${ut.u_combinada !== undefined ? ut.u_combinada : '-'}</td>`;
+    html += `<td>${ut.U_expandida !== undefined ? ut.U_expandida : '-'}</td>`;
+    html += `<td>${isRefTemp ? '-' : renderEnCellTd(inst.en?.temperatura)}</td>`;
+    html += `</tr><tr>`;
+
+    if (hasHum) {
+      const uu = inst.incerteza_umid || {};
+      html += `<td style="${isRefTemp || isRefUmid ? refStyle : ''}"></td>`;
+      html += `<td>U (%)</td>`;
+      html += `<td>${uu.media !== undefined ? uu.media : '-'}</td>`;
+      html += `<td>${uu.u_combinada !== undefined ? uu.u_combinada : '-'}</td>`;
+      html += `<td>${uu.U_expandida !== undefined ? uu.U_expandida : '-'}</td>`;
+      html += `<td>${isRefUmid ? '-' : renderEnCellTd(inst.en?.umidade)}</td>`;
+      html += `</tr>`;
+    }
   }
 
+  html += `</tbody></table></div>`;
+  section.innerHTML = html;
+}
+
+function renderEnCellTd(value) {
+  if (value === undefined || value === null || value === '') return '-';
+  const cls = value > 1.0 ? 'color:#c62828;font-weight:600' : 'color:#2e7d32;font-weight:600';
+  return `<span style="${cls}">${value}</span>`;
+}
+
+function _renderLiveTable(section, snapshots) {
   const refTempLabel = globalRefs.temperatura || '';
   const refUmidLabel = globalRefs.umidade || '';
 
   const allLabels = new Set();
   for (const s of snapshots) {
-    for (const lb of Object.keys(s.readings)) {
+    for (const lb of Object.keys(s.readings || {})) {
       allLabels.add(lb);
     }
   }
@@ -719,19 +793,13 @@ function renderMonitorTable(snapshots) {
     const bRef = b === refTempLabel || b === refUmidLabel;
     if (aRef && !bRef) return -1;
     if (!aRef && bRef) return 1;
-    const aTempRef = a === refTempLabel;
-    const bTempRef = b === refTempLabel;
-    if (aTempRef && !bTempRef) return -1;
-    if (!aTempRef && bTempRef) return 1;
+    if (a === refTempLabel && b !== refTempLabel) return -1;
+    if (b === refTempLabel && a !== refTempLabel) return 1;
     return a.localeCompare(b);
   });
 
   let html = '';
-  html += `<div class="export-bar">`;
-  html += `<button class="btn btn-outline" onclick="exportCSV()">Exportar CSV</button>`;
-  html += `<span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} registros</span>`;
-  html += `</div>`;
-
+  html += `<div class="export-bar"><span style="font-size:0.8rem;color:#888;align-self:center">${snapshots.length} registros</span></div>`;
   if (!labels.length) {
     section.innerHTML = html + '<div class="empty-state">Sem instrumentos com label configurado</div>';
     return;
@@ -743,50 +811,32 @@ function renderMonitorTable(snapshots) {
     const info = labelTypeMap[lb] || {};
     const isRefTemp = refTempLabel === lb;
     const isRefUmid = refUmidLabel === lb;
-    const hasHum = info.hasHumidity;
 
-    html += `<th>${lb}${isRefTemp ? ' <span class="col-sub">Ref T</span>' : ''}<br><span class="col-sub">T (&#176;C)</span></th>`;
-    if (hasHum) {
-      html += `<th>${lb}${isRefUmid ? ' <span class="col-sub">Ref U</span>' : ''}<br><span class="col-sub">U (%)</span></th>`;
-    }
-    if (!isRefTemp) html += `<th>${lb}<br><span class="col-sub">En T</span></th>`;
-    if (hasHum && !isRefUmid) html += `<th>${lb}<br><span class="col-sub">En U</span></th>`;
+    html += `<th>${lb}${isRefTemp ? ' Ref T' : ''}<br>T (&#176;C)</th>`;
+    if (info.hasHumidity) html += `<th>${lb}${isRefUmid ? ' Ref U' : ''}<br>U (%)</th>`;
   }
   html += `</tr></thead><tbody>`;
 
+  const refStyle = 'font-weight:700;background:#e8eaf6';
   for (const s of snapshots.slice().reverse()) {
     html += `<tr><td class="ts-col">${s.timestamp}</td>`;
     for (const lb of labels) {
-      const r = s.readings[lb];
+      const r = (s.readings || {})[lb];
       const info = labelTypeMap[lb] || {};
-      const isRefTemp = refTempLabel === lb;
-      const isRefUmid = refUmidLabel === lb;
-      const hasHum = info.hasHumidity;
-      const refStyle = 'font-weight:700;background:#e8eaf6';
-
       if (r) {
-        html += `<td${isRefTemp ? ` style="${refStyle}"` : ''}>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
-        if (hasHum) {
-          html += `<td${isRefUmid ? ` style="${refStyle}"` : ''}>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
+        html += `<td${lb === refTempLabel ? ` style="${refStyle}"` : ''}>${r.temperature !== undefined && r.temperature !== '' ? r.temperature : '-'}</td>`;
+        if (info.hasHumidity) {
+          html += `<td${lb === refUmidLabel ? ` style="${refStyle}"` : ''}>${r.humidity !== undefined && r.humidity !== '' ? r.humidity : '-'}</td>`;
         }
-        const en = r.en || {};
-        if (!isRefTemp) html += renderEnCell(en.temperatura);
-        if (hasHum && !isRefUmid) html += renderEnCell(en.umidade);
       } else {
         html += `<td class="error-cell">-</td>`;
-        if (hasHum) html += `<td class="error-cell">-</td>`;
-        if (!isRefTemp) html += `<td class="error-cell">-</td>`;
-        if (hasHum && !isRefUmid) html += `<td class="error-cell">-</td>`;
+        if (info.hasHumidity) html += `<td class="error-cell">-</td>`;
       }
     }
     html += `</tr>`;
   }
-
   html += `</tbody></table></div>`;
   section.innerHTML = html;
-  } catch (e) {
-    addDebug(`renderTable erro: ${e.message}`, 'err');
-  }
 }
 
 function exportCSV() {
@@ -870,7 +920,7 @@ async function updateMonitorStatus() {
     const btnStop = document.getElementById('btnStop');
 
     if (data.running) {
-      statusEl.textContent = 'Monitoramento: Ativo';
+      statusEl.textContent = `Monitoramento: Ativo (${data.progress?.current || 0}/${data.progress?.total || 0})`;
       statusEl.style.color = '#a5d6a7';
       btnStart.disabled = true;
       btnStop.disabled = false;
@@ -888,9 +938,9 @@ async function updateMonitorStatus() {
 }
 
 async function startMonitor() {
-  const interval = parseInt(document.getElementById('monitorInterval').value) || 20;
-  const nReadings = parseInt(document.getElementById('monitorNReadings').value) || 10;
-  addDebug(`POST /api/monitor/start interval=${interval} n=${nReadings}`);
+  const intervalo = parseInt(document.getElementById('monitorInterval').value) || 30;
+  const nMedicoes = parseInt(document.getElementById('monitorNMedicoes').value) || 10;
+  addDebug(`monitor iniciado: ${nMedicoes} medicoes a cada ${intervalo}s`);
 
   const activeDevices = [...document.querySelectorAll('select[data-device]')]
     .filter(s => s.value)
@@ -905,10 +955,10 @@ async function startMonitor() {
     await fetch(`${API}/monitor/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ interval: parseInt(interval), n_readings: parseInt(nReadings) })
+      body: JSON.stringify({ intervalo: parseInt(intervalo), n_medicoes: parseInt(nMedicoes) })
     });
     updateMonitorStatus();
-    addDebug(`monitor iniciado: ${nReadings} rodadas, 1 a cada ${interval}s`, 'ok');
+    addDebug(`monitor iniciado: ${nMedicoes} medicoes, 1 a cada ${intervalo}s`, 'ok');
   } catch (e) {
     addDebug(`monitor ERRO: ${e.message}`, 'err');
     alert('Erro ao iniciar monitoramento: ' + e.message);

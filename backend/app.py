@@ -12,7 +12,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from backend.database import init_db, get_calibracao, save_calibracao, delete_calibracao, list_calibracoes as db_list_calibracoes, get_incerteza_u
-from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes
+from backend.instruments import INSTRUMENT_TYPES, get_instrument, aplicar_correcoes, calc_incerteza
 from backend.serial_utils import find_usb_serial_ports
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
@@ -27,6 +27,7 @@ references: dict[str, str] = {"temperatura": "", "umidade": ""}
 lock = threading.Lock()
 monitoring = False
 monitor_thread = None
+monitor_progress = {"current": 0, "total": 0}
 
 
 @app.route("/")
@@ -282,32 +283,92 @@ def api_snapshots_csv():
     if not snaps:
         return "sem dados\n", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
-    labels = set()
-    for s in snaps:
-        labels.update(s["readings"].keys())
-    labels = sorted(labels)
-
-    header = ["Timestamp"]
-    for lb in labels:
-        header.append(f"{lb}_T (°C)")
-        header.append(f"{lb}_U (%)")
-        header.append(f"{lb}_En_T")
-        header.append(f"{lb}_En_U")
+    s = snaps[-1]
+    instrumentos = s.get("instrumentos", {})
+    labels = sorted(instrumentos.keys())
+    n_med = s.get("n_medicoes", 0)
 
     output = io.StringIO()
     writer = csv.writer(output)
+
+    writer.writerow(["RELATORIO DE CHECAGEM"])
+    writer.writerow(["Timestamp", s.get("timestamp", "")])
+    writer.writerow(["N medicoes", n_med])
+    writer.writerow(["Intervalo (s)", s.get("intervalo", "")])
+    writer.writerow([])
+
+    writer.writerow(["MEDICOES BRUTAS"])
+    header = ["Medicao"]
+    for lb in labels:
+        inst = instrumentos[lb]
+        if "medicoes_temp" in inst:
+            header.append(f"{lb} T bruta")
+        if "medicoes_umid" in inst:
+            header.append(f"{lb} U bruta")
     writer.writerow(header)
 
-    for s in snaps:
-        row = [s["timestamp"]]
+    for i in range(n_med):
+        row = [i + 1]
         for lb in labels:
-            r = s["readings"].get(lb, {})
-            row.append(r.get("temperature", ""))
-            row.append(r.get("humidity", ""))
-            en = r.get("en", {})
-            row.append(en.get("temperatura", ""))
-            row.append(en.get("umidade", ""))
+            inst = instrumentos[lb]
+            if "medicoes_temp" in inst:
+                row.append(inst["medicoes_temp"][i] if i < len(inst["medicoes_temp"]) else "")
+            if "medicoes_umid" in inst:
+                row.append(inst["medicoes_umid"][i] if i < len(inst["medicoes_umid"]) else "")
         writer.writerow(row)
+
+    writer.writerow([])
+    writer.writerow(["MEDICOES CORRIGIDAS"])
+    header = ["Medicao"]
+    for lb in labels:
+        inst = instrumentos[lb]
+        if "medicoes_temp_corr" in inst:
+            header.append(f"{lb} T corr")
+        if "medicoes_umid_corr" in inst:
+            header.append(f"{lb} U corr")
+    writer.writerow(header)
+
+    for i in range(n_med):
+        row = [i + 1]
+        for lb in labels:
+            inst = instrumentos[lb]
+            if "medicoes_temp_corr" in inst:
+                row.append(inst["medicoes_temp_corr"][i] if i < len(inst["medicoes_temp_corr"]) else "")
+            if "medicoes_umid_corr" in inst:
+                row.append(inst["medicoes_umid_corr"][i] if i < len(inst["medicoes_umid_corr"]) else "")
+        writer.writerow(row)
+
+    writer.writerow([])
+    writer.writerow(["RESUMO ESTATISTICO"])
+    header = ["Instrumento", "Grandeza", "Media", "Desvio Padrao", "u_repet", "u_res", "u_cert", "u_combinada", "U (k=2)", "En"]
+    writer.writerow(header)
+
+    with lock:
+        ref_temp = references.get("temperatura", "")
+        ref_umid = references.get("umidade", "")
+
+    for lb in labels:
+        inst = instrumentos[lb]
+        for tipo, grand in [("temperatura", "Temperatura"), ("umidade", "Umidade")]:
+            key = f"incerteza_{tipo}"
+            if key in inst:
+                u = inst[key]
+                en_val = inst.get("en", {}).get(tipo, "")
+                writer.writerow([
+                    lb, grand,
+                    u.get("media", ""),
+                    u.get("desvio_padrao", ""),
+                    u.get("u_repet", ""),
+                    u.get("u_res", ""),
+                    u.get("u_cert", ""),
+                    u.get("u_combinada", ""),
+                    u.get("U_expandida", ""),
+                    en_val,
+                ])
+
+    writer.writerow([])
+    writer.writerow(["Referencia Temperatura", ref_temp])
+    writer.writerow(["Referencia Umidade", ref_umid])
 
     csv_content = output.getvalue()
     output.close()
@@ -315,147 +376,209 @@ def api_snapshots_csv():
     return Response(
         csv_content,
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=leituras.csv"},
+        headers={"Content-Disposition": "attachment; filename=relatorio_checagem.csv"},
     )
 
 
-def _monitor_loop(interval: float, n_readings: int):
-    global monitoring
-    for i in range(n_readings):
+def _monitor_loop(interval: float, n_medicoes: int):
+    global monitoring, monitor_progress
+    items = []
+    with lock:
+        items = list(assignments.items())
+        monitor_progress = {"current": 0, "total": n_medicoes}
+
+    medicoes_temp = {}  # label -> list of raw temps
+    medicoes_umid = {}  # label -> list of raw umids
+    medicoes_temp_corr = {}
+    medicoes_umid_corr = {}
+    labels_tipo = {}    # label -> instr_type
+    labels_modo = {}    # label -> modo_correcao
+
+    for device, cfg in items:
+        label = cfg.get("label", device)
+        labels_tipo[label] = cfg.get("type", "")
+        labels_modo[label] = cfg.get("modo_correcao", "ponto_fixo")
+        medicoes_temp[label] = []
+        medicoes_umid[label] = []
+        medicoes_temp_corr[label] = []
+        medicoes_umid_corr[label] = []
+
+    for i in range(n_medicoes):
         if not monitoring:
             break
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        snapshot = {"timestamp": ts, "readings": {}}
-
-        with lock:
-            items = list(assignments.items())
 
         with ThreadPoolExecutor(max_workers=len(items)) as executor:
             futures = {
-                executor.submit(_read_one, device, cfg, ts): device
+                executor.submit(_read_one_raw, device, cfg): device
                 for device, cfg in items
             }
             for future in as_completed(futures):
                 device = futures[future]
                 try:
-                    label, flattened = future.result()
-                    snapshot["readings"][label] = flattened
+                    label, raw_temp, raw_umid = future.result()
+                    cfg = assignments.get(device, {})
+                    modo = cfg.get("modo_correcao", "ponto_fixo")
+                    calibracao = get_calibracao(label) if label else None
+                    corr = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
+
+                    t_corr = corr.get("temperature", raw_temp or "")
+                    u_corr = corr.get("humidity", raw_umid or "")
+
+                    if raw_temp:
+                        medicoes_temp[label].append(raw_temp)
+                        medicoes_temp_corr[label].append(t_corr)
+                    if raw_umid:
+                        medicoes_umid[label].append(raw_umid)
+                        medicoes_umid_corr[label].append(u_corr)
+
+                    with lock:
+                        readings[device] = {
+                            "device": device,
+                            "label": label,
+                            "temperature": t_corr,
+                            "humidity": u_corr,
+                            "temperature_raw": raw_temp,
+                            "humidity_raw": raw_umid,
+                            "instrument_type": cfg.get("type", ""),
+                            "instrument_label": INSTRUMENT_TYPES.get(cfg.get("type", ""), {}).get("label", ""),
+                            "status": "ok",
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "certificado": calibracao.get("certificado", "") if calibracao else "",
+                            "has_calibracao": bool(calibracao),
+                            **corr,
+                        }
                 except Exception:
                     pass
 
-        if snapshot["readings"]:
-            _compute_errors_normalizados(snapshot)
-            with lock:
-                snapshots.append(snapshot)
-                if len(snapshots) > 1000:
-                    snapshots[:] = snapshots[-1000:]
+        with lock:
+            monitor_progress["current"] = i + 1
 
-        time.sleep(interval)
+        for device in list(medicoes_temp.keys()):
+            label = assignments.get(device, {}).get("label", device)
+            if label not in medicoes_temp:
+                medicoes_temp[label] = medicoes_temp.get(device, [])
+                medicoes_umid[label] = medicoes_umid.get(device, [])
+                medicoes_temp_corr[label] = medicoes_temp_corr.get(device, [])
+                medicoes_umid_corr[label] = medicoes_umid_corr.get(device, [])
+
+        if i < n_medicoes - 1:
+            time.sleep(interval)
+
+    snapshot = _build_snapshot(n_medicoes, interval, medicoes_temp, medicoes_umid,
+                               medicoes_temp_corr, medicoes_umid_corr,
+                               labels_tipo, labels_modo)
+
+    with lock:
+        snapshots.append(snapshot)
+        if len(snapshots) > 100:
+            snapshots[:] = snapshots[-100:]
 
     monitoring = False
 
 
-def _read_one(device: str, cfg: dict, ts: str):
+def _read_one_raw(device: str, cfg: dict):
     instr_type = cfg.get("type", "")
     label = cfg.get("label", device)
-    modo = cfg.get("modo_correcao", "ponto_fixo")
-
-    try:
-        instrument = get_instrument(instr_type)
-        result = instrument.read(device)
-
-        raw_temp = result.get("temperature")
-        raw_umid = result.get("humidity")
-        calibracao = get_calibracao(label) if label else None
-        correcoes = aplicar_correcoes(raw_temp, raw_umid, calibracao, modo)
-        result.update(correcoes)
-
-        if calibracao:
-            result["certificado"] = calibracao.get("certificado", "")
-            result["data_calibracao"] = calibracao.get("data_calibracao", "")
-            result["has_calibracao"] = True
-        else:
-            result["has_calibracao"] = False
-
-        result["timestamp"] = ts
-        result["device"] = device
-        result["instrument_type"] = instr_type
-        result["instrument_label"] = INSTRUMENT_TYPES[instr_type]["label"]
-        result["label"] = label
-        result["status"] = "ok"
-
-        with lock:
-            readings[device] = result
-
-        flattened = {
-            "temperature": result.get("temperature", ""),
-            "humidity": result.get("humidity", ""),
-        }
-        return label, flattened
-    except Exception as e:
-        with lock:
-            readings[device] = {
-                "device": device,
-                "instrument_type": instr_type,
-                "label": label,
-                "status": "error",
-                "error": str(e),
-                "timestamp": ts,
-            }
-        raise
+    instrument = get_instrument(instr_type)
+    result = instrument.read(device)
+    return label, result.get("temperature"), result.get("humidity")
 
 
-def _compute_errors_normalizados(snapshot: dict):
+def _build_snapshot(n_medicoes, intervalo, medicoes_temp, medicoes_umid,
+                    medicoes_temp_corr, medicoes_umid_corr,
+                    labels_tipo, labels_modo):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    snapshot = {
+        "timestamp": ts,
+        "n_medicoes": n_medicoes,
+        "intervalo": intervalo,
+        "instrumentos": {},
+    }
+
     with lock:
         ref_temp = references.get("temperatura", "")
         ref_umid = references.get("umidade", "")
 
-    for label, reading in snapshot["readings"].items():
-        en = {}
+    for label in labels_tipo:
+        instr_type = labels_tipo[label]
+        modo = labels_modo[label]
+        calibracao = get_calibracao(label) if label else None
 
-        if ref_temp and label != ref_temp and "temperature" in reading and reading["temperature"]:
-            ref_reading = snapshot["readings"].get(ref_temp, {})
-            ref_val = ref_reading.get("temperature")
-            if ref_val and ref_val != "":
-                u_instr = get_incerteza_u(label, "temperatura")
-                u_ref = get_incerteza_u(ref_temp, "temperatura")
-                if u_instr is not None and u_ref is not None:
-                    diff = abs(float(reading["temperature"]) - float(ref_val))
-                    denom = math.sqrt(u_instr**2 + u_ref**2)
+        inst_data = {"tipo": instr_type}
+
+        temps = medicoes_temp_corr.get(label, [])
+        temps_raw = medicoes_temp.get(label, [])
+        umids = medicoes_umid_corr.get(label, [])
+        umids_raw = medicoes_umid.get(label, [])
+
+        if temps_raw:
+            inst_data["medicoes_temp"] = temps_raw
+            inst_data["medicoes_temp_corr"] = temps_corr = _to_floats(temps)
+            incerteza_temp = calc_incerteza(temps_corr, instr_type, "temperatura", calibracao)
+            inst_data["incerteza_temp"] = incerteza_temp
+
+        if umids_raw:
+            inst_data["medicoes_umid"] = umids_raw
+            inst_data["medicoes_umid_corr"] = umids_corr = _to_floats(umids)
+            incerteza_umid = calc_incerteza(umids_corr, instr_type, "umidade", calibracao)
+            inst_data["incerteza_umid"] = incerteza_umid
+
+        en = {}
+        if ref_temp and label != ref_temp and temps_corr:
+            ref_data = snapshot["instrumentos"].get(ref_temp, {})
+            ref_temps = ref_data.get("medicoes_temp_corr", [])
+            if ref_temps:
+                ref_media = sum(ref_temps) / len(ref_temps)
+                my_media = sum(temps_corr) / len(temps_corr)
+                u_my = incerteza_temp.get("u_combinada")
+                u_ref = ref_data.get("incerteza_temp", {}).get("u_combinada")
+                if u_my and u_ref:
+                    diff = abs(my_media - ref_media)
+                    denom = math.sqrt(u_my**2 + u_ref**2)
                     en["temperatura"] = round(diff / denom, 2) if denom > 0 else None
 
-        if ref_umid and label != ref_umid and "humidity" in reading and reading["humidity"]:
-            ref_reading = snapshot["readings"].get(ref_umid, {})
-            ref_val = ref_reading.get("humidity")
-            if ref_val and ref_val != "":
-                u_instr = get_incerteza_u(label, "umidade")
-                u_ref = get_incerteza_u(ref_umid, "umidade")
-                if u_instr is not None and u_ref is not None:
-                    diff = abs(float(reading["humidity"]) - float(ref_val))
-                    denom = math.sqrt(u_instr**2 + u_ref**2)
+        if ref_umid and label != ref_umid and umids_corr:
+            ref_data = snapshot["instrumentos"].get(ref_umid, {})
+            ref_umids = ref_data.get("medicoes_umid_corr", [])
+            if ref_umids:
+                ref_media = sum(ref_umids) / len(ref_umids)
+                my_media = sum(umids_corr) / len(umids_corr)
+                u_my = incerteza_umid.get("u_combinada")
+                u_ref = ref_data.get("incerteza_umid", {}).get("u_combinada")
+                if u_my and u_ref:
+                    diff = abs(my_media - ref_media)
+                    denom = math.sqrt(u_my**2 + u_ref**2)
                     en["umidade"] = round(diff / denom, 2) if denom > 0 else None
 
         if en:
-            reading["en"] = en
+            inst_data["en"] = en
+
+        snapshot["instrumentos"][label] = inst_data
+
+    return snapshot
+
+
+def _to_floats(values: list[str]) -> list[float]:
+    return [float(v) for v in values if v is not None and v != ""]
 
 
 @app.route("/api/monitor/start", methods=["POST"])
 def api_monitor_start():
     global monitoring, monitor_thread
     data = request.get_json() or {}
-    interval = float(data.get("interval", 20))
-    n_readings = int(data.get("n_readings", 10))
+    intervalo = float(data.get("intervalo", 30))
+    n_medicoes = int(data.get("n_medicoes", 10))
 
     if monitoring:
-        return jsonify({"status": "ja em execucao", "interval": interval})
+        return jsonify({"status": "ja em execucao"})
 
     with lock:
         snapshots.clear()
 
     monitoring = True
-    monitor_thread = threading.Thread(target=_monitor_loop, args=(interval, n_readings), daemon=True)
+    monitor_thread = threading.Thread(target=_monitor_loop, args=(intervalo, n_medicoes), daemon=True)
     monitor_thread.start()
-    return jsonify({"status": "iniciado", "interval": interval, "n_readings": n_readings})
+    return jsonify({"status": "iniciado", "intervalo": intervalo, "n_medicoes": n_medicoes})
 
 
 @app.route("/api/monitor/stop", methods=["POST"])
@@ -467,7 +590,7 @@ def api_monitor_stop():
 
 @app.route("/api/monitor/status", methods=["GET"])
 def api_monitor_status():
-    return jsonify({"running": monitoring})
+    return jsonify({"running": monitoring, "progress": dict(monitor_progress)})
 
 
 @app.route("/api/calibracao/<label>", methods=["GET"])
