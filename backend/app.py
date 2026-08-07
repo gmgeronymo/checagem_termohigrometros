@@ -53,6 +53,7 @@ def api_ports():
         instr_type = cfg.get("type", "")
         port["assigned_type"] = instr_type
         port["assigned_label"] = cfg.get("label", "")
+        port["assigned_url"] = cfg.get("url", "")
         port["instrument_label"] = (
             INSTRUMENT_TYPES[instr_type]["label"]
             if instr_type in INSTRUMENT_TYPES
@@ -86,7 +87,8 @@ def api_assign():
             readings.pop(device, None)
         else:
             existing = assignments.get(device, {})
-            assignments[device] = {"type": instr_type, "label": label}
+            url = data.get("url", existing.get("url", ""))
+            assignments[device] = {"type": instr_type, "label": label, "url": url}
 
     return jsonify({"status": "ok", "device": device, "type": instr_type, "label": label})
 
@@ -104,6 +106,23 @@ def api_label():
         if device in assignments:
             assignments[device]["label"] = label
             return jsonify({"status": "ok", "device": device, "label": label})
+
+    return jsonify({"error": "dispositivo nao configurado"}), 400
+
+
+@app.route("/api/url", methods=["POST"])
+def api_url():
+    data = request.get_json()
+    device = data.get("device")
+    url = data.get("url", "")
+
+    if not device:
+        return jsonify({"error": "device e obrigatorio"}), 400
+
+    with lock:
+        if device in assignments:
+            assignments[device]["url"] = url
+            return jsonify({"status": "ok", "device": device, "url": url})
 
     return jsonify({"error": "dispositivo nao configurado"}), 400
 
@@ -126,7 +145,9 @@ def api_read():
 
     try:
         instrument = get_instrument(instr_type)
-        result = instrument.read(label if instr_type == "termhigrpi" else device)
+        url = cfg.get("url", "") if instr_type == "termhigrpi" else ""
+        target = url if url else (label if instr_type == "termhigrpi" else device)
+        result = instrument.read(target)
     except Exception as e:
         tb = traceback.format_exc()
         error_result = {
@@ -549,7 +570,9 @@ def _read_one_raw(device: str, cfg: dict):
     instr_type = cfg.get("type", "")
     label = cfg.get("label", device)
     instrument = get_instrument(instr_type)
-    result = instrument.read(label if instr_type == "termhigrpi" else device)
+    url = cfg.get("url", "")
+    target = url if url else (label if instr_type == "termhigrpi" else device)
+    result = instrument.read(target)
     return label, result.get("temperature"), result.get("humidity")
 
 

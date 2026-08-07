@@ -405,7 +405,9 @@ async function assignInstrument(device, type) {
   const btnRead = document.getElementById(`btn-read-${escaped}`);
   const btnCal = document.getElementById(`btn-cal-${escaped}`);
   const labelInput = document.getElementById(`label-${escaped}`);
+  const urlInput = document.getElementById(`url-${escaped}`);
   const label = labelInput ? labelInput.value.trim() : '';
+  const url = urlInput ? urlInput.value.trim() : '';
   if (statusEl) statusEl.innerHTML = '<span class="spinner"></span>';
 
   addDebug(`POST /api/assign device=${device} type=${type || '(vazio)'} label=${label}`);
@@ -414,7 +416,7 @@ async function assignInstrument(device, type) {
     await fetch(`${API}/assign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device, type, label })
+      body: JSON.stringify({ device, type, label, url })
     });
 
     if (statusEl) {
@@ -424,10 +426,27 @@ async function assignInstrument(device, type) {
     }
     if (btnRead) btnRead.disabled = !type;
     if (btnCal) btnCal.style.display = type ? '' : 'none';
+    if (urlInput) urlInput.style.display = type === 'termhigrpi' ? '' : 'none';
     addDebug(`assign OK para ${device}`, 'ok');
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<span class="error">Erro: ${e.message}</span>`;
     addDebug(`assign ERRO: ${e.message}`, 'err');
+  }
+}
+
+async function updateUrl(device) {
+  const escaped = CSS.escape(device);
+  const urlInput = document.getElementById(`url-${escaped}`);
+  const url = urlInput ? urlInput.value.trim() : '';
+
+  try {
+    await fetch(`${API}/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, url })
+    });
+  } catch (e) {
+    addDebug(`url ERRO: ${e.message}`, 'err');
   }
 }
 
@@ -647,9 +666,10 @@ function renderPorts(ports) {
     }
     html += `</select>`;
 
-    const labelPlaceholder = p.assigned_type === 'termhigrpi' ? 'http://ip:porta' : 'CA 000';
-    const labelStyle = p.assigned_type === 'termhigrpi' ? 'width:200px' : '';
-    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="${labelPlaceholder}" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')" style="${labelStyle}">`;
+    const labelPlaceholder = p.assigned_type === 'termhigrpi' ? 'CA 000 (label)' : 'CA 000';
+    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="${labelPlaceholder}" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;
+
+    html += `<input type="text" id="url-${escaped}" placeholder="http://ip:porta" value="${p.assigned_url || ''}" onchange="updateUrl('${p.device}')" style="width:180px;display:${p.assigned_type === 'termhigrpi' ? '' : 'none'}">`;
 
     html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
 
