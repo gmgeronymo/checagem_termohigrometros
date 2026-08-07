@@ -126,7 +126,7 @@ def api_read():
 
     try:
         instrument = get_instrument(instr_type)
-        result = instrument.read(device)
+        result = instrument.read(label if instr_type == "termhigrpi" else device)
     except Exception as e:
         tb = traceback.format_exc()
         error_result = {
@@ -549,7 +549,7 @@ def _read_one_raw(device: str, cfg: dict):
     instr_type = cfg.get("type", "")
     label = cfg.get("label", device)
     instrument = get_instrument(instr_type)
-    result = instrument.read(device)
+    result = instrument.read(label if instr_type == "termhigrpi" else device)
     return label, result.get("temperature"), result.get("humidity")
 
 

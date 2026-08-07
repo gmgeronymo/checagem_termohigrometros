@@ -637,6 +637,7 @@ function renderPorts(ports) {
     html += `<option value="">-- Selecionar --</option>`;
     if (p.virtual) {
       html += `<option value="simulado" ${p.assigned_type === 'simulado' ? 'selected' : ''}>Simulado</option>`;
+      html += `<option value="termhigrpi" ${p.assigned_type === 'termhigrpi' ? 'selected' : ''}>TermHigrPi (HTTP)</option>`;
     } else {
       html += `<option value="fluke_1502a" ${p.assigned_type === 'fluke_1502a' ? 'selected' : ''}>Fluke 1502A</option>`;
       html += `<option value="sato" ${p.assigned_type === 'sato' ? 'selected' : ''}>Sato Novo</option>`;
@@ -646,7 +647,9 @@ function renderPorts(ports) {
     }
     html += `</select>`;
 
-    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="CA 000" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')">`;
+    const labelPlaceholder = p.assigned_type === 'termhigrpi' ? 'http://ip:porta' : 'CA 000';
+    const labelStyle = p.assigned_type === 'termhigrpi' ? 'width:200px' : '';
+    html += `<input type="text" class="label-input" id="label-${escaped}" placeholder="${labelPlaceholder}" value="${p.assigned_label || ''}" onchange="updateLabel('${p.device}')" style="${labelStyle}">`;
 
     html += `<button class="btn btn-primary" id="btn-read-${escaped}" onclick="readInstrument('${p.device}')" ${!hasType ? 'disabled' : ''}>Ler</button>`;
 
