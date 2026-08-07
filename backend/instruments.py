@@ -2,6 +2,8 @@ import random
 import traceback
 import time
 import serial
+import urllib.request
+import json
 from abc import ABC, abstractmethod
 
 
@@ -297,8 +299,39 @@ class Simulado(Instrument):
         }
 
 
+class TermHigrPiHTTP(Instrument):
+    BAUD = 0
+    BYTESIZE = 0
+    PARITY = "N"
+    STOPBITS = 0
+    _timeout = 5
+
+    def init(self, ser):
+        pass
+
+    def _do_debug(self, ser):
+        return {"http_endpoint": True}
+
+    def read(self, port: str = "", timeout: int = 5) -> dict:
+        url = port if port.startswith("http") else f"http://{port}/leitura"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        temp = data.get("temperature")
+        umid = data.get("humidity")
+        if temp is None and umid is None:
+            raise ValueError(f"Resposta inesperada do TermHigrPi: {data}")
+        return {
+            "temperature": f"{temp:.1f}" if temp is not None else "",
+            "humidity": f"{umid:.1f}" if umid is not None else "",
+            "unit_temp": "°C",
+            "unit_umid": "%",
+        }
+
+
 INSTRUMENT_TYPES = {
     "simulado": {"label": "Simulado", "class": Simulado, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
+    "termhigrpi": {"label": "TermHigrPi (HTTP)", "class": TermHigrPiHTTP, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
     "fluke_1502a": {"label": "Fluke 1502A", "class": Fluke1502A, "has_humidity": False, "res_temp": 0.001},
     "sato": {"label": "Sato Novo", "class": Sato, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
     "sato_old": {"label": "Sato Antigo", "class": SatoOld, "has_humidity": True, "res_temp": 0.1, "res_umid": 0.1},
